@@ -24,7 +24,7 @@ Panelin merkezi ortak gelen kutusudur. Kullanıcı yetkili olduğu numaraları g
 
 | Özellik | Ne yapar | Kim kullanır |
 | --- | --- | --- |
-| **Sohbet listesi** | Numaradaki sohbetler. Her sohbette kişi adı, son mesaj, okunmamış sayısı, atanan kişi, durum ve etiketler | Numarayı görebilen herkes |
+| **Sohbet listesi** | Numaradaki sohbetler. Her sohbette kişi adı ve telefon numarası, son mesaj, okunmamış sayısı, atanan kişi, durum ve etiketler | Numarayı görebilen herkes |
 | **Mesaj geçmişi** | Sohbetin mesajları eskiden yeniye, 100'erli sayfalar halinde. Daha eski mesajlar sayfa sayfa yüklenir | Numarayı görebilen herkes |
 | **Panelden yanıt** | Sohbete metin mesajı gönderir (en fazla 4096 karakter) | `messages.send` + numarada yazma erişimi |
 | **Yeni sohbet başlatma** | Telefon numarası ve ilk mesajla yeni sohbet açar. Göndermeden önce numaranın WhatsApp kullanıp kullanmadığı denetlenir | `chats.start` + numarada yazma erişimi |
@@ -35,7 +35,9 @@ Panelin merkezi ortak gelen kutusudur. Kullanıcı yetkili olduğu numaraları g
 
 **Mesaj içerikleri.** Metin mesajları olduğu gibi gösterilir. Medya ve özel içerikler panelde açıklayıcı bir etiketle görünür: `[Fotoğraf]`, `[Video]`, `[Ses kaydı]`, `[Belge]`, `[Çıkartma]`, `[Konum]`, `[Kişi kartı]`, `[Anket]`. Fotoğraf ve videonun açıklaması, belgenin dosya adı etiketin yanında yazar. Tepki, silme/düzenleme bildirimi gibi teknik olaylar mesaj olarak listelenmez. Panel bire bir sohbetlerle çalışır. Gruplar, durum (story) yayınları ve kanallar listelenmez.
 
-**Kayıt başlangıcı.** Panel, numara bağlandığı andan itibaren gelen ve giden mesajları kaydeder.
+**Kişi adları.** Sohbetin adı şu sırayla seçilir: numaranın telefonundaki **rehberde kayıtlı ad**, kişinin kendi WhatsApp **profil adı**, ikisi de yoksa **telefon numarası**. Harf ya da rakam içermeyen profil adları ("." gibi) yok sayılır. Rehber adları numara eşleştirilirken WhatsApp'tan gelir ve rehberde ad değişince güncellenir.
+
+**Kayıt başlangıcı ve son sohbetler.** Numara ilk kez eşleştirildiğinde WhatsApp son sohbetleri bağlı cihaza gönderir. Panel bunlardan bire bir sohbetleri alır ve her sohbetin **son 5 mesajını** kaydeder. İçe aktarılan mesajlar okunmamış sayılmaz, bildirim göndermez ve kapalı sohbeti açmaz. Daha eski geçmiş çekilmez. Sonrasında gelen ve giden tüm mesajlar kaydedilir. Bu aktarım yalnızca ilk eşleştirmede olur. Daha önce bağlanmış bir numarada son sohbetleri getirmek için numarayı silip yeniden eşleştirmek gerekir.
 
 **Sağlamlık.** Aynı mesaj WhatsApp'tan iki kez gelirse bir kez kaydedilir. Geç ulaşan eski bir mesaj sohbetin "son mesaj" bilgisini ezmez. Gizli kimlikle (LID) gelen kişiler mümkün olduğunda telefon numaralarıyla eşlenir, böylece aynı kişinin sohbeti tek kalır.
 
@@ -52,7 +54,7 @@ Panelin merkezi ortak gelen kutusudur. Kullanıcı yetkili olduğu numaraları g
 | **Kurulabilir uygulama (PWA)** | Panel telefona ya da masaüstüne uygulama olarak kurulur. Uygulama kabuğu önbellekten hızlı açılır | Herkes |
 | **Tema** | Açık, koyu ya da sistem temasını izleyen görünüm. Seçim cihazda hatırlanır | Herkes |
 
-**Bildirim içeriği.** Müşteriden gelen mesajda başlık "Kişi · Numara", gövde mesajın ilk 140 karakteridir. Ekipten giden mesajlarda ("Numara → Kişi") gövdede yazan kişi de yazar: "Ayşe: …", ekranına geçilerek yazıldıysa "Patron (Ali olarak): …", telefondan yazıldıysa "Telefondan: …". Mesajı panelden gönderen kişinin kendisine bildirim gitmez.
+**Bildirim içeriği.** Müşteriden gelen mesajda başlık "Kişi · Numara", gövde mesajın ilk 140 karakteridir. Ekipten giden mesajlarda ("Numara → Kişi") gövdede yazan kişi de yazar: "Ayşe: …", ekranına geçilerek yazıldıysa "Patron (Ali olarak): …", telefondan yazıldıysa "Telefondan: …". Mesajı panelden gönderen kişinin kendisine bildirim gitmez. Çıkış yapılan cihazın aboneliği sunucudan silinir, o cihaza artık bildirim (ve mesaj önizlemesi) gitmez.
 
 **Yetki her olayda denetlenir.** Canlı akış ve push hedefleri her olayda veritabanından hesaplanır. Bir kullanıcının numara ataması ya da rolü değiştiğinde bir sonraki olaydan itibaren etkili olur. Devre dışı bırakılan kullanıcıya bildirim gitmez.
 
@@ -140,7 +142,7 @@ Her rol bir izin listesidir. Roller **Yönetim → Roller** ekranında oluşturu
 | Grup | İzin | Anlamı |
 | --- | --- | --- |
 | Numaralar | `numbers.view_all` | Atama olmadan tüm numaraları görür |
-| Numaralar | `numbers.manage` | Numara ekler, siler, bağlar |
+| Numaralar | `numbers.manage` | Numara ekler; görebildiği numaraları siler, bağlar, yeniler. Eklediği numaraya yazma erişimi kendiliğinden verilir |
 | Mesajlar | `messages.send` | Yazma erişimi olan numaralarda mesaj gönderir |
 | Mesajlar | `chats.start` | Yeni sohbet başlatır |
 | Mesajlar | `chats.assign` | Sohbeti başkasına atar (kendine üstlenmek için yazma erişimi yeter) |
@@ -174,7 +176,7 @@ Kurallar:
 - Kendi rolünüzü değiştiremez, kendi hesabınızı devre dışı bırakamaz, kendinizi silemezsiniz.
 - Sistemde **en az bir aktif Patron** kalmak zorundadır.
 - Kullanıcısı olan bir rol silinemez. Önce kullanıcılar başka role taşınır.
-- **Numara erişimi de sınırlıdır.** `numbers.view_all` izni olmayan bir yönetici, kendi erişiminden fazlasını kimseye veremez: göremediği bir numaraya erişim veremez, yalnızca okuyabildiği bir numarada yazma veremez. Kendi numara erişimini de değiştiremez.
+- **Numara erişimi de sınırlıdır.** `numbers.view_all` izni olmayan bir yönetici, kendi erişiminden fazlasını kimseye veremez: göremediği bir numaraya erişim veremez, yalnızca okuyabildiği bir numarada yazma veremez. Kendi numara erişimini de değiştiremez. Kendi erişmediği bir numaraya erişimi olan kullanıcıyı düzenleyemez, şifresini sıfırlayamaz ya da silemez. Numara yönetimi de yalnızca görebildiği numaralarda çalışır.
 
 > **İpucu:** Ekip liderleri için "Yönetici" gibi bir rol oluşturun: `numbers.view_all`, `messages.send`, `chats.start`, `chats.assign`, `reports.view`. Böylece Patron yetkisi vermeden ekibi yönetebilirler.
 
@@ -222,7 +224,7 @@ Adına gönderilen mesajlar ve notlar **"Patron (Ali olarak)"** biçiminde kayde
 | **Silme** | Kullanıcı kaldırılır. Etkinlik kaydı ve notlarda adı okunur kalır |
 | **Son giriş** | Her kullanıcının son giriş zamanı listede görünür |
 
-**Oturum.** Giriş sonrası oturum, imzalı ve `httpOnly` bir çerezde 7 gün geçerlidir. Kullanıcı ve izinleri her istekte veritabanından okunur. Rol, izin ya da hesap durumu değişikliği anında etkili olur, yeniden giriş gerekmez. Şifreler yalnızca hash olarak saklanır. Aynı kullanıcı adıyla art arda 5 hatalı girişten sonra o kullanıcı adı 5 dakika kilitlenir. Ayrıntılar: [Güvenlik](#güvenlik).
+**Oturum.** Giriş sonrası oturum, imzalı ve `httpOnly` bir çerezde 7 gün geçerlidir. Kullanıcı ve izinleri her istekte veritabanından okunur. Rol, izin ya da hesap durumu değişikliği anında etkili olur, yeniden giriş gerekmez. Şifreler yalnızca hash olarak saklanır. Aynı kullanıcı adıyla aynı adresten art arda 5 hatalı girişten sonra o adresten giriş 5 dakika kilitlenir. Çok sayıda hatalı deneme yapan bir adres 15 dakika engellenir. Ayrıntılar: [Güvenlik](#güvenlik).
 
 **İlk hesap.** Kurulumda ilk Patron hesabı komut satırından oluşturulur:
 
@@ -251,6 +253,8 @@ bun run user:create patron <şifre> "Ad Soyad" Patron
 Toplam 29 işlem türü kaydedilir. Tam liste: [api.md](api.md) (`AuditEntry.action`).
 
 **Filtreler.** Kişiye göre filtrelendiğinde, o kişinin kendi yaptıklarıyla birlikte **onun ekranında yapılanlar** da listelenir. İşlem türüne göre de filtrelenebilir.
+
+**Numara sınırı.** Numarayla ilgili kayıtlar (mesaj, atama, not, dışa aktarma, numara ekleme/silme/eşleştirme) yalnızca o numarayı görebilenlere listelenir. `numbers.view_all` izni olan kişi tüm kayıtları görür. Yönetim ve oturum kayıtları numaraya bağlı değildir, etkinlik kaydını görebilen herkese açıktır.
 
 **Kalıcı adlar.** Kayıtlarda kişi adları da saklanır. Kullanıcı sonradan silinse bile geçmiş kayıtlar okunur kalır.
 
@@ -327,7 +331,7 @@ Biga Panel'de güvenlik kararları sunucuda, her istekte verilir. Arayüz yalnı
 
 | Koruma | Ne yapar | Neden önemli |
 | --- | --- | --- |
-| **Giriş kilidi** | Aynı kullanıcı adıyla art arda 5 hatalı denemeden sonra 5 dakika kilit (429). Her hatalı deneme etkinlik kaydına geçer | Şifre tahmin denemelerini yavaşlatır ve görünür kılar |
+| **Giriş kilidi** | Aynı kullanıcı adı ve adresten art arda 5 hatalı denemede 5 dakika, çok sayıda deneme yapan adrese 15 dakika kilit (429). Başka adresten gelen denemeler gerçek kullanıcıyı kilitlemez. Her hatalı deneme adresiyle birlikte etkinlik kaydına geçer | Şifre tahmin denemelerini yavaşlatır ve görünür kılar |
 | **Kullanıcı adı sızdırmama** | Var olmayan kullanıcı adında da şifre doğrulaması yapılır. Yanıt süresi ve mesajı aynıdır ("Kullanıcı adı veya şifre hatalı") | Hangi kullanıcı adlarının var olduğu dışarıdan anlaşılmaz |
 | **Güvenli oturum çerezi** | İmzalı JWT, `httpOnly`, `SameSite=Lax`, HTTPS'te `Secure`. Çerezde yalnızca kimlik vardır, izinler her istekte veritabanından okunur | Rol değişikliği, devre dışı bırakma ve geçiş iptali anında etkili olur |
 | **Şifre değişince oturum düşürme** | Şifresi değişen kullanıcının diğer tüm oturumları geçersiz olur | Ele geçirilmiş ya da unutulmuş açık oturumlar şifre sıfırlamayla kapanır |
@@ -347,7 +351,17 @@ Production kurulumunda HTTPS, güvenlik başlıkları ve yedekleme için: [deplo
 
 ## Bağlantı yöntemi
 
-Numaralar, WhatsApp Web'in çoklu cihaz protokolü üzerinden (açık kaynak Baileys kütüphanesi) sunucuya **bağlı cihaz** olarak eklenir. Bağlama 8 haneli eşleştirme kodu ya da QR ile yapılır ve cihaz telefondaki "Bağlı cihazlar" listesinde görünür. Bu yöntem resmi WhatsApp Business API değildir. Bu yüzden kullanım doğal kalmalıdır: sizi tanıyan kişilerle, sohbet temposunda yazışma. Panel bunu destekleyen korumalarla gelir:
+Numaralar, WhatsApp Web'in çoklu cihaz protokolü üzerinden (açık kaynak Baileys kütüphanesi) sunucuya **bağlı cihaz** olarak eklenir. Bağlama 8 haneli eşleştirme kodu ya da QR ile yapılır ve cihaz telefondaki "Bağlı cihazlar" listesinde görünür. Bu yöntem resmi WhatsApp Business API değildir. Bu yüzden kullanım doğal kalmalıdır: sizi tanıyan kişilerle, sohbet temposunda yazışma.
+
+### Neden bu yöntem
+
+Bağlı cihaz yöntemi bilinçli bir başlangıç tercihidir. Amaç, ekip gelen kutusunun tamamını kısa sürede ve mevcut numaralarla çalışır halde göstermekti. Bu yöntem için Meta işletme hesabı, işletme doğrulaması, numaranın WhatsApp Business uygulamasına taşınması ya da bir çözüm ortağı üzerinden kayıt gerekmez. Numara, telefondaki WhatsApp'tan birkaç saniyede bağlanır ve telefonda kullanılmaya devam eder.
+
+Yöntem gayriresmidir ve WhatsApp kullanım koşullarının dışında kalır. Bu yüzden panel, numarayı sıradan bir WhatsApp Web kullanıcısından ayırt edilemeyecek şekilde çalıştırmak üzere tasarlandı. Gönderimler insan hızında ve "yazıyor…" göstergesiyle gider. Bağlı cihaz çevrim içi görünmez. Tam geçmiş istenmez. Yeni sohbet açmadan önce numaranın WhatsApp'ta olup olmadığı denetlenir. Kopan bağlantı kontrollü biçimde yeniden kurulur. WhatsApp bir kısıtlama sinyali verirse gönderim kendiliğinden durur. Ban riskini asıl belirleyen kullanım biçimidir. Tanıdık kişilerle, sohbet temposunda yapılan yazışmada risk düşük tutulur. Toplu gönderim ve tanımadığı kişilere ilk mesaj ise riski belirgin artırır. Risk hiçbir koşulda sıfır değildir. WhatsApp protokolü değiştikçe Baileys'in güncellenmesi gerekir.
+
+Resmi yol açık tutuldu. WhatsApp bağlantısı tek bir arayüzün (`MessagingProvider`) arkasındadır. Resmi Cloud API, numaranın hem WhatsApp Business uygulamasında hem API'de çalıştığı *Coexistence* biçimi dahil, yeni bir sağlayıcı olarak eklenebilir. Gelen kutusu, roller, ekranına geç, raporlar ve etkinlik kaydı değişmeden çalışır. Bugün gerçek ve test numaralarının yan yana durması da bu katman sayesindedir. Aynı panelde resmi ve gayriresmi numaralar birlikte kullanılabilir.
+
+Panel bu yöntemin riskini azaltan korumalarla gelir:
 
 | Koruma | Ne yapar |
 | --- | --- |
@@ -356,6 +370,26 @@ Numaralar, WhatsApp Web'in çoklu cihaz protokolü üzerinden (açık kaynak Bai
 | **Kontrollü yeniden bağlanma** | Kopan bağlantı artan aralıklarla (en fazla 60 sn) ve en fazla 10 kez denenir. Oturum başka bir yerde açıldıysa (440) ya da WhatsApp bağlantıyı reddettiyse (403) yeniden deneme yapılmaz |
 | **Yeni sohbet öncesi denetim** | Yeni sohbet başlatmadan önce numaranın WhatsApp kullanıp kullanmadığı sorgulanır. Kullanmayan numaraya mesaj gönderilmez |
 | **Çevrim içi görünmeme** | Bağlı cihaz bağlandığında "çevrim içi" durumu yayınlamaz |
-| **Toplu geçmiş eşitlemesi yok** | Bağlanırken eski mesaj geçmişi çekilmez. Panel bağlandığı andan itibaren kayıt tutar |
+| **Tam geçmiş eşitlemesi yok** | Bağlanırken tüm mesaj geçmişi istenmez. Yalnızca WhatsApp'ın her bağlı cihaza gönderdiği son sohbetler alınır, her sohbetten son 5 mesaj kaydedilir |
 
 Oturum anahtarları sunucuda `BAILEYS_AUTH_DIR` klasöründe numara başına saklanır. Bu klasör numaraya erişim anlamına geldiği için gizli tutulmalı ve yedeklenmelidir. Aynı oturum aynı anda tek bir sunucuda çalışmalıdır. Production kurulumu için: [deploy.md](deploy.md).
+
+### Gerçek numarayla doğrulama
+
+Bağlantı katmanı 28 Ekim 2026'da gerçek bir WhatsApp numarasıyla uçtan uca denendi. Telefondan 8 haneli eşleştirme koduyla bağlanan numara birkaç saniyede **Bağlı** durumuna geçti. İlk eşitlemede 96 bire bir sohbet son mesajlarıyla ve 267 rehber adı panele geldi. Gizli kimlikle (LID) yazan bir kişinin sohbeti doğru telefon numarasıyla eşleşti. Gelen mesaj sayfa yenilenmeden listeye düştü, panelden verilen yanıt da karşı tarafa ulaştı. Grup ve kanal mesajları beklendiği gibi dışarıda kaldı.
+
+---
+
+## Yapılabilir ama bilerek eklenmeyenler
+
+Aşağıdakiler kullanılan altyapıyla mümkündür. Şimdilik değerleri, getirdikleri risk ve bakım yüküne değmediği için eklenmedi. İhtiyaç olursa nasıl yapılacağı da not edildi.
+
+| Özellik | Neden şimdilik yok | Eklenirse nasıl |
+| --- | --- | --- |
+| **Kişi profil fotoğrafları** | Ekip gelen kutusunda kişiyi tanıtan bilgi ad ve numaradır, ikisi de gösteriliyor. Fotoğraf için her kişiye ayrı WhatsApp sorgusu gerekir. Kısa sürede çok sayıda profil sorgulamak bağlı bir cihaz için doğal olmayan bir kullanım profili oluşturur. Fotoğraf adresleri birkaç günde geçersizleşir ve fotoğraflar kişisel veridir (KVKK) | Fotoğraf yalnızca açılan sohbet için ve günde en fazla bir kez çekilir (Baileys `profilePictureUrl`). Sunucuda önbelleğe alınır, numaraya erişimi olanlara yetki denetimli bir uç noktadan sunulur. Kişi fotoğrafını gizlediyse baş harfler kalır |
+| **Numaranın kendi profili** (ad, fotoğraf) | Numaraya verilen etiket ("Satış", "Destek") ekipte bu işi zaten görüyor | Bağlantıda gelen profil adı ve aynı fotoğraf yöntemi |
+| **Medya içeriği** (fotoğraf, ses, belge) | Mesajlar `[Fotoğraf]` gibi etiketlerle görünür. İndirmek depolama, saklama süresi ve erişim denetimi gerektirir | Medya istek üzerine indirilir, sınırlı süre saklanır, sohbete erişimi olanlara sunulur |
+| **Resmi WhatsApp bağlantısı** (Cloud API / Coexistence) | İlk sürümde hızlı ve işletme hesabı gerektirmeyen bağlantı seçildi (bkz. [Neden bu yöntem](#neden-bu-yöntem)) | `MessagingProvider` arayüzünü uygulayan yeni bir sağlayıcı. Numara türü `baileys` / `mock` yanına üçüncü bir tür olarak eklenir |
+| **Grup sohbetleri** | Panel müşteriyle bire bir yazışma için tasarlandı. Gruplarda atama, cevap süresi ve "kim yazdı" kavramları farklı işler | Gruplar ayrı bir sohbet türü olarak alınır, katılımcı adlarıyla gösterilir |
+| **Çok sunuculu ölçek** | Tek süreç ve SQLite, küçük ve orta ekipler için kurulumu ve yedeklemeyi basit tutar. Bağlı cihaz oturumu zaten tek yerde çalışmak zorundadır | Veritabanı katmanı PostgreSQL'e taşınır. Canlı akış için ortak bir yayın kanalı (ör. Redis) eklenir |
+| **Daha eski mesaj geçmişi** | İlk eşitlemede her sohbetin son 5 mesajı alınır. Tam geçmiş istemek bağlantı sırasında yük ve risk getirir | Sohbet başına istek üzerine geçmiş (Baileys `fetchMessageHistory`) |

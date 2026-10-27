@@ -23,6 +23,8 @@ services:
       DATABASE_PATH: /app/data/app.db
       BAILEYS_AUTH_DIR: /app/data/baileys
       STATIC_DIR: /app/web/dist
+      # Caddy arkasında: istemci adresi X-Forwarded-For'dan okunur (giriş denemesi sınırı IP başına çalışsın).
+      TRUST_PROXY: "true"
     volumes:
       - app-data:/app/data
     # Dışarıya açılmaz; sadece Caddy erişir.

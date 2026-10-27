@@ -57,6 +57,17 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
+/** Çıkışta: bu tarayıcının aboneliğini sunucudan siler; çıkış yapılan cihaza bildirim (mesaj önizlemesi) gitmez.
+ *  Tarayıcıdaki abonelik kalır; bu cihazda biri giriş yapınca initPush onu o kişiye bağlar. */
+export async function forgetPushOnServer(): Promise<void> {
+  try {
+    const sub = await currentSubscription();
+    if (sub) await post("/api/push/unsubscribe", { endpoint: sub.endpoint });
+  } catch {
+    // önemsiz: oturum zaten kapanıyor
+  }
+}
+
 /** Oturum açılınca: anahtar, izin ve abonelik durumunu okur. rebind=true ise var olan aboneliği bu kullanıcıya bağlar. */
 export async function initPush({ rebind }: { rebind: boolean }): Promise<void> {
   try {

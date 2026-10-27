@@ -10,6 +10,9 @@ const schema = z.object({
   DATABASE_PATH: z.string().default("./data/app.db"),
   JWT_SECRET: z.string().min(32, "en az 32 karakter olmalı"),
   COOKIE_SECURE: envBoolean(false),
+  // Ters vekil (Caddy) arkasında true: istemci adresi X-Forwarded-For'dan okunur (giriş denemesi sınırı için).
+  // Doğrudan internete açık sunucuda false kalmalı; yoksa başlık taklit edilerek sınır atlatılır.
+  TRUST_PROXY: envBoolean(false),
   // Yeni numaranın varsayılan türü. baileys: gerçek WhatsApp (sunucuya bağlı cihaz). mock: WhatsApp'sız test numarası.
   PROVIDER: z.enum(["baileys", "mock"]).default("baileys"),
   // Test (mock) numaralarına izin: boş bırakılırsa production dışında açık. PROVIDER=mock ise her zaman açık.

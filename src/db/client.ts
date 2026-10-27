@@ -155,7 +155,24 @@ const V5 = () => `
 ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;
 `;
 
-const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4, V5];
+// Sürüm 6: telefon rehberindeki kişi adları (numara başına). Sohbet adında profil adından önceliklidir.
+const V6 = () => `
+CREATE TABLE contacts (
+  number_id INTEGER NOT NULL REFERENCES numbers(id) ON DELETE CASCADE,
+  remote_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  PRIMARY KEY (number_id, remote_id)
+);
+`;
+
+// Sürüm 7: etkinlik kaydında numara kimliği (yabancı anahtar yok: numara silinse de kayıt kalır).
+// Eski kayıtlarda NULL'dır ve herkese açık numarasız kayıt gibi davranır.
+const V7 = () => `
+ALTER TABLE audit_log ADD COLUMN number_id INTEGER;
+CREATE INDEX audit_log_number ON audit_log (number_id, id);
+`;
+
+const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4, V5, V6, V7];
 
 const migrate = (db: Database) => {
   const current = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;

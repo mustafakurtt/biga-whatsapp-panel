@@ -15,7 +15,8 @@ export const createNumbersRepository = (db: Database) => ({
     const marks = ids.map(() => "?").join(",");
     return sortTr(db.query<NumberRow, number[]>(`SELECT * FROM numbers WHERE id IN (${marks})`).all(...ids), (n) => n.label);
   },
-  // Oturum adı numaranın kimliğinden türetilir (n1, n2…), böylece tekil ve sabittir.
+  // Oturum adı numaranın kimliği + rastgele bir ek (n2-1a2b3c): SQLite silinen numaranın kimliğini yeniden
+  // verebilir; ek olmazsa yeni numara silinenin oturum klasörünü (BAILEYS_AUTH_DIR/n2) devralırdı.
   create: (label: string, phone: string, provider: ProviderKind): NumberRow =>
     db.transaction(() => {
       const temp = `tmp_${crypto.randomUUID()}`;
@@ -24,7 +25,7 @@ export const createNumbersRepository = (db: Database) => ({
           "INSERT INTO numbers (label, phone, provider, session, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
         )
         .get(label, phone, provider, temp, Date.now())!;
-      db.query("UPDATE numbers SET session = ? WHERE id = ?").run(`n${row.id}`, row.id);
+      db.query("UPDATE numbers SET session = ? WHERE id = ?").run(`n${row.id}-${crypto.randomUUID().slice(0, 6)}`, row.id);
       return db.query<NumberRow, [number]>("SELECT * FROM numbers WHERE id = ?").get(row.id)!;
     })(),
   setStatus: (id: number, status: NumberStatus, meId: string | null) =>

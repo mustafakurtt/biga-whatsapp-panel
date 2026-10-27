@@ -1,7 +1,7 @@
 // Test numaraları açıkken: test numarasına sahte gelen mesaj (WhatsApp'sız deneme).
 import { Hono } from "hono";
 import { z } from "zod";
-import { has } from "../../shared/access";
+import { canSeeNumber, has } from "../../shared/access";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { badRequest, forbidden, notFound, readJson } from "../../shared/http";
 import { isValidPhone, normalizePhone, toChatId } from "../../shared/phone";
@@ -21,7 +21,7 @@ export const createDevRoutes = (deps: AppDeps) => {
     const parsed = inboundSchema.safeParse(await readJson(c));
     if (!parsed.success) throw badRequest("numberId, from ve text gerekli");
     const number = numbers.get(parsed.data.numberId);
-    if (!number) throw notFound("Numara bulunamadı");
+    if (!number || !canSeeNumber(deps.db, c.get("user"), number.id)) throw notFound("Numara bulunamadı");
     if (number.provider !== "mock") throw badRequest("Sahte mesaj sadece test numaralarına gönderilebilir");
     const digits = normalizePhone(parsed.data.from);
     if (!isValidPhone(digits)) throw badRequest("Telefon numarası geçersiz");

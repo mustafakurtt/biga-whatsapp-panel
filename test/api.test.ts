@@ -102,7 +102,8 @@ describe("numaralar ve mesajlar", () => {
       notifier: { publicKey: "", notifyNumber: async () => {} },
       logger: createLogger({ level: "silent" }),
     });
-    const base = { kind: "message" as const, session: `n${numberId}`, remoteId: "905320000000@s.whatsapp.net", ts: 1000 };
+    const session = t.db.query<{ session: string }, [number]>("SELECT session FROM numbers WHERE id = ?").get(numberId)!.session;
+    const base = { kind: "message" as const, session, remoteId: "905320000000@s.whatsapp.net", ts: 1000 };
     await svc.handleInbound({ ...base, providerId: "A", contactName: null, source: "phone", body: "Telefondan" });
     await svc.handleInbound({ ...base, providerId: "A", contactName: null, source: "phone", body: "Telefondan" });
     await svc.handleInbound({ ...base, providerId: "B", contactName: "Can", source: "contact", body: "Eski", ts: 500 });

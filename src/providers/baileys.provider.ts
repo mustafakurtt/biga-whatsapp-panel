@@ -11,19 +11,21 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
   WAMessageStatus,
+  type Contact,
   type WAMessage,
   type WAMessageContent,
   type WASocket,
 } from "baileys";
 import type { Logger } from "@mustafakurtt/hono-core/logger";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import QRCode from "qrcode";
 import type { Env } from "../config/env";
-import { type InboundHandler, type MessagingProvider, ProviderError } from "../shared/contracts";
+import { type InboundHandler, type InboundMessage, type MessagingProvider, ProviderError } from "../shared/contracts";
 import type { NumberStatus } from "../shared/types";
 import { textOf, timestampMs } from "./baileys.messages";
+import { silenceLibsignalSessionLogs } from "./libsignal-quiet";
 
 const READY_TIMEOUT_MS = 20_000;
 const MAX_RETRY_DELAY_MS = 60_000;
@@ -37,6 +39,8 @@ const MAX_RETRIES = 10;
 const RESTRICTION_PAUSE_MS = 24 * 60 * 60 * 1000;
 // Karşı taraf mesajı çözemezse yeniden gönderebilmek için son gönderilenler bellekte tutulur.
 const SENT_CACHE_SIZE = 500;
+// Geçmiş parçaları arasında bu kadar sessizlik olunca biriken parçalar işlenir.
+const HISTORY_SETTLE_MS = 4_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -57,6 +61,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number, message: string): Promi
   ]);
 
 export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent: InboundHandler }): MessagingProvider => {
+  silenceLibsignalSessionLogs();
   const { env, onEvent } = opts;
   const logger = opts.logger.child({ module: "baileys" });
   // Baileys çok konuşkan; kendi kayıtlarını sadece uyarı seviyesinden itibaren yazar.
@@ -80,6 +85,25 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
 
   const dirOf = (session: string) => join(env.BAILEYS_AUTH_DIR, session);
   const hasCreds = (session: string) => existsSync(join(dirOf(session), "creds.json"));
+  // Kısıtlama süresi oturum klasöründe saklanır: sunucu yeniden başlasa da 24 saatlik duraklama sürer.
+  const restrictionFile = (session: string) => join(dirOf(session), "panel-restricted.json");
+  const saveRestriction = (session: string, until: number | null) => {
+    try {
+      if (until === null) rmSync(restrictionFile(session), { force: true });
+      else writeFileSync(restrictionFile(session), JSON.stringify({ until }));
+    } catch (err) {
+      logger.warn({ err, session }, "kısıtlama bilgisi yazılamadı");
+    }
+  };
+  const loadRestriction = (session: string) => {
+    try {
+      const { until } = JSON.parse(readFileSync(restrictionFile(session), "utf8")) as { until?: unknown };
+      if (typeof until === "number" && until > Date.now()) restrictedUntil.set(session, until);
+      else saveRestriction(session, null);
+    } catch {
+      // dosya yok: kısıtlama yok
+    }
+  };
 
   const setStatus = (session: string, status: NumberStatus, meId: string | null = null) => {
     const prev = known.get(session);
@@ -101,16 +125,15 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
     return jidNormalizedUser(remote);
   };
 
-  const handleMessage = async (session: string, sock: WASocket, m: WAMessage) => {
-    if (!m.key.id || !m.message) return;
+  // Baileys mesajını panel mesajına çevirir; gösterilecek bir şey yoksa ya da grup/kanal ise null.
+  const toInbound = async (sock: WASocket, m: WAMessage): Promise<InboundMessage | null> => {
+    if (!m.key.id || !m.message) return null;
     const body = textOf(m.message);
-    if (body === null) return;
+    if (body === null) return null;
     const remoteId = await resolveRemote(sock, m);
-    if (!remoteId) return;
+    if (!remoteId) return null;
     const fromMe = Boolean(m.key.fromMe);
-    onEvent({
-      kind: "message",
-      session,
+    return {
       providerId: m.key.id,
       remoteId,
       contactName: fromMe ? null : m.pushName || null,
@@ -118,7 +141,45 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       source: fromMe ? "phone" : "contact",
       body,
       ts: timestampMs(m.messageTimestamp),
-    });
+    };
+  };
+
+  const handleMessage = async (session: string, sock: WASocket, m: WAMessage) => {
+    const message = await toInbound(sock, m);
+    if (message) onEvent({ kind: "message", session, ...message });
+  };
+
+  // Rehber kaydı → sohbet kimliği (telefon numaralı). Grup, kanal ve çözülemeyen kimlikler atlanır.
+  const contactRemote = async (sock: WASocket, c: Partial<Contact>): Promise<string | null> => {
+    const id = c.id;
+    if (!id || isJidGroup(id) || isJidBroadcast(id) || id.endsWith("@newsletter")) return null;
+    if (isPnUser(id)) return jidNormalizedUser(id);
+    if (c.phoneNumber && isPnUser(c.phoneNumber)) return jidNormalizedUser(c.phoneNumber);
+    if (isLidUser(id)) {
+      const pn = await sock.signalRepository.lidMapping.getPNForLID(id).catch(() => null);
+      return jidNormalizedUser(pn ?? id);
+    }
+    return null;
+  };
+
+  // Sadece rehberdeki ad (name) alınır; kişinin kendi profil adı (notify) mesajla birlikte gelir.
+  const handleContacts = async (session: string, sock: WASocket, list: Partial<Contact>[]) => {
+    const contacts: { remoteId: string; name: string }[] = [];
+    for (const c of list) {
+      if (!c.name) continue;
+      const remoteId = await contactRemote(sock, c);
+      if (remoteId) contacts.push({ remoteId, name: c.name });
+    }
+    if (contacts.length > 0) onEvent({ kind: "contacts", session, contacts });
+  };
+
+  const handleHistory = async (session: string, sock: WASocket, list: WAMessage[]) => {
+    const messages: InboundMessage[] = [];
+    for (const m of list) {
+      const message = await toInbound(sock, m);
+      if (message) messages.push(message);
+    }
+    if (messages.length > 0) onEvent({ kind: "history", session, messages });
   };
 
   // Kısıtlama süresi dolduysa kaldırır (ve durumu WORKING'e döndürür).
@@ -127,6 +188,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
     if (until === undefined) return false;
     if (until > Date.now()) return true;
     restrictedUntil.delete(session);
+    saveRestriction(session, null);
     if (known.get(session)?.status === "RESTRICTED" && entries.has(session)) setStatus(session, "WORKING");
     return false;
   };
@@ -152,6 +214,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
   };
 
   const open = async (session: string): Promise<Entry> => {
+    loadRestriction(session);
     const { state, saveCreds } = await useMultiFileAuthState(dirOf(session));
     const sock = makeWASocket({
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, libLogger) },
@@ -160,9 +223,11 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       // Panelden gönderilen mesajlar zaten kaydediliyor; ikinci kez olay olarak gelmesin.
       emitOwnEvents: false,
       markOnlineOnConnect: false,
+      // Tam geçmiş istenmez. shouldSyncHistoryMessage Baileys varsayılanında kalır: ilk eşleştirmede
+      // yalnızca son sohbetler gelir (FULL hariç). Eşitlemeyi tamamen kapatmak Baileys'in LID eşlemelerini
+      // almasını engeller ve oturum hatalarına yol açar (Baileys açılışta bunun için uyarı verir).
+      // Panel gelen paketten sohbet başına son birkaç mesajı sessizce kaydeder (MessageService).
       syncFullHistory: false,
-      // Geçmiş içe aktarılmaz; panel bağlandığı andan itibaren kayıt tutar.
-      shouldSyncHistoryMessage: () => false,
       getMessage: async (key) => (key.id ? sentCache.get(key.id) : undefined),
     });
 
@@ -240,6 +305,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
         logger.warn({ session, code, id: key.id }, "mesaj iletilemedi");
         if (code === "463") {
           restrictedUntil.set(session, Date.now() + RESTRICTION_PAUSE_MS);
+          saveRestriction(session, restrictedUntil.get(session)!);
           logger.error({ session }, "WhatsApp hesabı kısıtladı (463); panelden gönderim 24 saat durduruldu");
           setStatus(session, "RESTRICTED");
         }
@@ -250,6 +316,29 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       for (const m of messages) {
         handleMessage(session, sock, m).catch((err) => logger.error({ err, session }, "mesaj işlenemedi"));
       }
+    });
+
+    // İlk eşleştirmede gelen son sohbetler ve rehber adları.
+    // Geçmiş birkaç parça halinde, saniyeler içinde gelir. Parçalar biriktirilip tek seferde işlenir;
+    // böylece "sohbet başına son N mesaj" tüm geçmişe uygulanır. Rehber adları hemen işlenir.
+    let historyBuffer: WAMessage[] = [];
+    let historyTimer: ReturnType<typeof setTimeout> | undefined;
+    sock.ev.on("messaging-history.set", ({ messages, contacts, syncType }) => {
+      logger.info({ session, syncType, messages: messages.length, contacts: contacts.length }, "geçmiş eşitlemesi geldi");
+      handleContacts(session, sock, contacts).catch((err) => logger.error({ err, session }, "rehber işlenemedi"));
+      historyBuffer.push(...messages);
+      clearTimeout(historyTimer);
+      historyTimer = setTimeout(() => {
+        const batch = historyBuffer;
+        historyBuffer = [];
+        handleHistory(session, sock, batch).catch((err) => logger.error({ err, session }, "geçmiş işlenemedi"));
+      }, HISTORY_SETTLE_MS);
+    });
+    sock.ev.on("contacts.upsert", (contacts) => {
+      handleContacts(session, sock, contacts).catch((err) => logger.error({ err, session }, "rehber işlenemedi"));
+    });
+    sock.ev.on("contacts.update", (contacts) => {
+      handleContacts(session, sock, contacts).catch((err) => logger.error({ err, session }, "rehber işlenemedi"));
     });
 
     return entry;

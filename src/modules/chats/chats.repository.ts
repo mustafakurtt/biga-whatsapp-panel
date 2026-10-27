@@ -1,5 +1,6 @@
 // Sohbet ve mesaj tabloları.
 import type { Database } from "../../db/client";
+import { cleanName, displayFromRemote } from "../../shared/phone";
 import type { ChatRow, ChatStatus, MessageSource, MessageView, Note } from "../../shared/types";
 
 export type { MessageView };
@@ -14,6 +15,8 @@ const CHAT_SELECT = `SELECT c.*, a.name AS assigned_name,
 type RawChat = Omit<ChatRow, "tags"> & { tag_list: string | null };
 const toChat = ({ tag_list, ...rest }: RawChat): ChatRow => ({
   ...rest,
+  // "." gibi anlamsız bir ad kayıtlıysa (eski kayıtlar dahil) numara gösterilir.
+  name: cleanName(rest.name) ?? displayFromRemote(rest.remote_id),
   tags: tag_list ? tag_list.split(",").map(Number).sort((a, b) => a - b) : [],
 });
 const toChatOrNull = (row: RawChat | null) => (row ? toChat(row) : null);
@@ -90,18 +93,39 @@ export const createChatsRepository = (db: Database) => {
           .map((r) => [r.number_id, r.n]),
       ),
 
-    // Sohbet yoksa oluşturur. Kişi adı geldiyse günceller.
+    // Sohbet yoksa oluşturur. Ad önceliği: rehberdeki ad → kişinin profil adı → numara.
+    // Rehberde adı olan kişinin profil adı sohbet adını ezmez.
     findOrCreate: (numberId: number, remoteId: string, name: string | null, fallbackName: string): ChatRow => {
+      const saved = db
+        .query<{ name: string }, [number, string]>("SELECT name FROM contacts WHERE number_id = ? AND remote_id = ?")
+        .get(numberId, remoteId)?.name;
+      const best = saved ?? cleanName(name);
       const { id } = db
         .query<{ id: number; name: string }, [number, string, string]>(
           `INSERT INTO chats (number_id, remote_id, name) VALUES (?, ?, ?)
            ON CONFLICT (number_id, remote_id) DO UPDATE SET name = name
            RETURNING id`,
         )
-        .get(numberId, remoteId, name ?? fallbackName)!;
-      if (name) db.query("UPDATE chats SET name = ? WHERE id = ? AND name != ?").run(name, id, name);
+        .get(numberId, remoteId, best ?? fallbackName)!;
+      if (best) db.query("UPDATE chats SET name = ? WHERE id = ? AND name != ?").run(best, id, best);
       return get(id)!;
     },
+
+    // Rehber adlarını kaydeder ve var olan sohbetlerin adını günceller. Adı değişen sohbet sayısını döner.
+    saveContacts: (numberId: number, contacts: { remoteId: string; name: string }[]): number =>
+      db.transaction(() => {
+        const upsert = db.query(
+          `INSERT INTO contacts (number_id, remote_id, name) VALUES (?, ?, ?)
+           ON CONFLICT (number_id, remote_id) DO UPDATE SET name = excluded.name`,
+        );
+        const rename = db.query("UPDATE chats SET name = ? WHERE number_id = ? AND remote_id = ? AND name != ?");
+        let changed = 0;
+        for (const c of contacts) {
+          upsert.run(numberId, c.remoteId, c.name);
+          changed += rename.run(c.name, numberId, c.remoteId, c.name).changes;
+        }
+        return changed;
+      })(),
 
     // Aynı sağlayıcı kimliği daha önce kaydedildiyse null döner (tekrar gelen olay).
     insertMessage: (m: NewMessage): number | null =>
@@ -113,7 +137,8 @@ export const createChatsRepository = (db: Database) => {
         .get(m.chatId, m.providerId, m.direction, m.source, m.sentBy, m.asUser, m.body, m.ts)?.id ?? null,
 
     // Son mesaj bilgisini ve okunmamış sayısını günceller (geç gelen eski mesaj son mesajı ezmez).
-    // Müşteri kapalı sohbete yazarsa sohbet yeniden açılır.
+    // incoming (yeni gelen müşteri mesajı): okunmamış +1 ve kapalı sohbet yeniden açılır.
+    // Geçmişten içe aktarılan mesajlarda incoming=false verilir: yalnızca son mesaj bilgisi güncellenir.
     touch: (chatId: number, body: string, ts: number, incoming: boolean): ChatRow => {
       db.query(
         `UPDATE chats SET
@@ -125,6 +150,10 @@ export const createChatsRepository = (db: Database) => {
       ).run(ts, body, incoming ? 1 : 0, chatId);
       return get(chatId)!;
     },
+
+    // Sohbette verilen andan yeni mesaj sayısı (geçmiş içe aktarma sınırı için).
+    countNewer: (chatId: number, ts: number): number =>
+      db.query<{ n: number }, [number, number]>("SELECT COUNT(*) AS n FROM messages WHERE chat_id = ? AND ts > ?").get(chatId, ts)!.n,
 
     markRead: (chatId: number) => db.query("UPDATE chats SET unread = 0 WHERE id = ?").run(chatId),
     assign: (chatId: number, userId: number | null) =>

@@ -25,7 +25,7 @@ Paneli bir VPS'te (kiralık sunucu) çalıştırmak kolaydır. WhatsApp tarafın
 - WhatsApp numarası sunucuya **bağlı cihaz** olarak eklenir ve WhatsApp bağlantının hangi IP'den geldiğini görür. **Veri merkezi (VPS, bulut) ve VPN IP'leri ban riskini artırır.** Evdeki veya ofisteki normal internet bağlantısı (ev IP'si) daha az risklidir.
 - Bu yüzden WhatsApp için en az riskli seçenek **evde/ofiste sürekli açık duran küçük bir bilgisayardır** (mini PC, eski bir dizüstü, ev sunucusu). Kurulum aynıdır. Ek olarak modemde 80/443 portlarını bu bilgisayara yönlendirmeniz gerekir. IP'niz değişiyorsa dinamik DNS kullanın. Operatörünüz CGNAT kullanıyorsa port yönlendirme çalışmaz; o durumda Cloudflare adlandırılmış tünel (named tunnel) gibi bir çözüm gerekir.
 - **Aynı WhatsApp oturumu asla iki yerde aynı anda çalışmamalı.** Örneğin `data/baileys` klasörünü kendi bilgisayarınızdan sunucuya kopyalayıp ikisini birden açarsanız iki taraf birbirini düşürür. Loglarda `440` / `connectionReplaced` görünür ve ban riski artar. Taşırken önce eskisini kapatın.
-- Bu yöntem resmi değildir ve WhatsApp kullanım koşullarına aykırıdır (bkz. README). Hangi IP'yi kullanırsanız kullanın risk sıfır değildir.
+- Bu yöntem resmi değildir ve WhatsApp kullanım koşullarına aykırıdır (bkz. [ozellikler.md → Neden bu yöntem](ozellikler.md#neden-bu-yöntem)). Hangi IP'yi kullanırsanız kullanın risk sıfır değildir.
 
 ---
 

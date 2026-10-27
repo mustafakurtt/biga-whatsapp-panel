@@ -25,18 +25,23 @@ export type InboundHandler = (event: InboundEvent) => void;
 // Sağlayıcının kullanıcıya gösterilebilir hatası (Türkçe). app.ts bunu 502'ye çevirir.
 export class ProviderError extends Error {}
 
+// Sağlayıcıdan gelen bir mesaj (canlı ya da geçmiş eşitlemesiyle).
+export interface InboundMessage {
+  providerId: string;
+  remoteId: string; // karşı taraf, ör. 905551112233@s.whatsapp.net
+  contactName: string | null; // kişinin WhatsApp profil adı (pushName)
+  source: MessageSource; // contact: karşıdan geldi, phone: telefondan yazıldı, panel: panelden gönderildi
+  body: string;
+  ts: number; // milisaniye
+}
+
 // Sağlayıcıdan gelen, normalize edilmiş olay.
 export type InboundEvent =
-  | {
-      kind: "message";
-      session: string;
-      providerId: string;
-      remoteId: string; // karşı taraf, ör. 905551112233@s.whatsapp.net
-      contactName: string | null;
-      source: MessageSource; // contact: karşıdan geldi, phone: telefondan yazıldı, panel: panelden gönderildi
-      body: string;
-      ts: number; // milisaniye
-    }
+  | ({ kind: "message"; session: string } & InboundMessage)
+  // İlk eşleştirmede gelen son sohbetler. Sessizce kaydedilir: okunmamış, bildirim ve mesaj olayı yok.
+  | { kind: "history"; session: string; messages: InboundMessage[] }
+  // Telefon rehberindeki adlar. Profil adından önceliklidir.
+  | { kind: "contacts"; session: string; contacts: { remoteId: string; name: string }[] }
   | { kind: "status"; session: string; status: NumberStatus; meId: string | null };
 
 // Mesajları kaydeden, canlı akışa yayan ve push gönderen tek yer.
@@ -104,6 +109,7 @@ export interface AuditLog {
     action: AuditAction;
     target?: string;
     detail?: string | null;
+    numberId?: number | null; // numarayla ilgili kayıtlarda: görünürlük süzgeci için
   }): void;
 }
 

@@ -15,13 +15,17 @@
 | **Ekip çalışması** | Sohbet atama, Benim/Atanmamış/Okunmamış filtreleri, açık/kapalı durumu, renkli etiketler, ekip içi notlar, hazır yanıtlar, "şu an bakıyor" göstergesi, mesaj araması | İş bölümü netleşir, tekrar eden yanıtlar hızlanır |
 | **Roller ve izinler** | 13 ayrı izinden özel roller. Numara başına *erişim yok / okuma / yazma* | Herkes yalnızca işi için gereken numaraları ve işlemleri görür |
 | **Ekranına geç** | Yetkili kişi bir kullanıcının ekranını onun gözünden görür, kendi yetkisiyle sınırlı olarak. Tamamen salt okunur izleme ya da (izin varsa) onun adına yazma | Ekip denetimi ve destek kolaylaşır. Adına yazılan mesaj "Patron (Ali olarak)" diye kaydedilir |
-| **Güvenlik** | Giriş kilidi (5 hatalı denemede 5 dakika), şifre değişince diğer oturumların düşmesi, CSRF koruması, istek boyutu sınırı, her istekte ve her canlı olayda yeniden yetki denetimi | Yetki sunucuda, her an güncel denetlenir. Bir kullanıcının erişimi kaldırıldığı anda biter |
+| **Güvenlik** | Giriş kilidi (aynı adresten 5 hatalı denemede 5 dakika, çok deneme yapan adrese 15 dakika), şifre değişince diğer oturumların düşmesi, CSRF koruması, istek boyutu sınırı, her istekte ve her canlı olayda yeniden yetki denetimi | Yetki sunucuda, her an güncel denetlenir. Bir kullanıcının erişimi kaldırıldığı anda biter |
 | **Etkinlik kaydı** | Girişler, hatalı denemeler, gönderilen mesajlar, ekranına geçmeler ve tüm yönetim değişiklikleri. Filtre ve CSV dışa aktarma | Kim, kimin adına, ne zaman, ne yaptı sorusunun cevabı hazırdır |
 | **Raporlar** | Gelen/giden sayıları, günlük dağılım, numara ve kullanıcı bazında kırılım, ortalama ve medyan cevap süresi | Ekip performansı ve yoğunluk ölçülebilir hale gelir |
 | **Numara yönetimi** | 8 haneli eşleştirme kodu ya da QR ile bağlama, canlı durum takibi. Gerçek ve test numaraları yan yana | Numara eklemek dakikalar sürer. Ekip gerçek numaraya dokunmadan eğitilebilir |
 | **Koruyucu gönderim katmanı** | Numara başına sıralı, insan hızında gönderim; "yazıyor…" göstergesi; kısıtlama sinyalinde otomatik duraklama; kontrollü yeniden bağlanma | Numaranın doğal bir kullanım profiliyle çalışmasına yardım eder |
 
 Tüm özelliklerin ayrıntısı: [docs/ozellikler.md](docs/ozellikler.md).
+
+**Durum.** Panel hem test numaralarıyla hem gerçek bir WhatsApp numarasıyla uçtan uca denendi. Gerçek numarada eşleştirme kodu, son sohbetlerin ve rehber adlarının ilk eşitlemesi, gelen mesajın canlı düşmesi ve panelden yanıt beklendiği gibi çalıştı. Sunucu tarafı 41 otomatik testle güvence altında: roller ve numara erişimi, ekranına geç sınırları, yönetim yetkisinin numara erişimiyle sınırı, CSRF, IP bazlı giriş sınırı, oturum düşürme, geçmiş eşitlemesi. Tip denetimleri temiz. WhatsApp bağlantısı tek bir arayüzün arkasında durduğu için ekip ve yeni kurallar gerçek numaraya dokunmadan test numarasıyla aynı akışta denenebiliyor. Altyapının izin verdiği ama bilerek eklenmeyen özellikler (profil fotoğrafları, medya indirme gibi) gerekçeleriyle [burada](docs/ozellikler.md#yapılabilir-ama-bilerek-eklenmeyenler) listelendi.
+
+**Bağlantı yöntemi.** Numaralar, işletme hesabı ve doğrulama gerektirmeden hemen çalışsın diye bilerek bağlı cihaz yöntemiyle (Baileys) bağlanır. Yöntem gayriresmidir. Panel bu yüzden ban riskini düşük tutacak şekilde yapıldı: insan hızında gönderim, "yazıyor…" göstergesi, çevrim içi görünmeme, kısıtlama sinyalinde otomatik duraklama. Tanıdık kişilerle normal tempoda yazışmada risk düşüktür ama sıfır değildir. Resmi Cloud API (Coexistence dahil), panelin geri kalanına dokunmadan yeni bir bağlantı türü olarak eklenebilir: [gerekçe ve geçiş yolu](docs/ozellikler.md#neden-bu-yöntem).
 
 ---
 
@@ -79,6 +83,7 @@ Sunucu derlenmiş arayüzü `STATIC_DIR` (varsayılan `./web/dist`) klasöründe
 | `DATABASE_PATH` | `./data/app.db` | SQLite dosyası |
 | `JWT_SECRET` | (zorunlu) | Oturum çerezini imzalar. En az 32 karakter |
 | `COOKIE_SECURE` | `false` | HTTPS arkasında `true` yapın |
+| `TRUST_PROXY` | `false` | Ters vekil (Caddy) arkasında `true`: istemci adresi `X-Forwarded-For`'dan okunur. Docker Compose kurulumunda açıktır. Doğrudan internete açık sunucuda `false` kalmalı |
 | `PROVIDER` | `baileys` | Yeni numaranın varsayılan türü: `baileys` (gerçek WhatsApp) ya da `mock` (test numarası) |
 | `ALLOW_MOCK` | (boş) | Test numaralarına izin. Boşsa production dışında açıktır. `PROVIDER=mock` ise her zaman açıktır |
 | `BAILEYS_AUTH_DIR` | `./data/baileys` | Numara başına WhatsApp oturum anahtarları. **Gizli tutulmalıdır** |

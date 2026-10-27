@@ -211,3 +211,104 @@ const sessionCookieAfterImpersonate = async (username: string, userId: number) =
 };
 
 void ({} as LiveEvent);
+
+describe("yönetim yetkisi numara erişimiyle sınırlı", () => {
+  // Lider: kullanıcı ve numara yönetir ama yalnızca A numarasını görür. ali ise B'ye yazar.
+  const leader = async () => {
+    const ctx = await prepare([]);
+    const role = (
+      await ctx.patron("POST", "/api/roles", {
+        name: "Lider",
+        permissions: ["users.manage", "numbers.manage", "messages.send", "chats.start"],
+      })
+    ).json.role;
+    const leadId = await t.addUser("lead", role.id, [{ numberId: ctx.a, access: "write" }]);
+    return { ...ctx, leadId, lead: await t.login("lead") };
+  };
+
+  test("göremediği numarayı silemez, eşleştiremez, yenileyemez, ona sahte mesaj sokamaz", async () => {
+    const { lead, patron, a, b } = await leader();
+    for (const [method, path] of [
+      ["DELETE", `/api/numbers/${b}`],
+      ["POST", `/api/numbers/${b}/pair`],
+      ["POST", `/api/numbers/${b}/refresh`],
+      ["GET", `/api/numbers/${b}/qr`],
+    ] as const) {
+      expect((await lead(method, path)).status).toBe(404);
+    }
+    expect((await lead("POST", "/api/dev/inbound", { numberId: b, from: "905320000009", text: "sahte" })).status).toBe(404);
+    expect((await patron("GET", "/api/numbers")).json.numbers.map((n: { id: number }) => n.id)).toContain(b);
+    // Kendi gördüğü numarada çalışır; eklediği numarayı görür.
+    expect((await lead("POST", `/api/numbers/${a}/refresh`)).status).toBe(200);
+    const created = await lead("POST", "/api/numbers", { label: "C", phone: "905551110003" });
+    expect(created.json.number.access).toBe("write");
+    expect((await lead("GET", "/api/numbers")).json.numbers).toHaveLength(2);
+  });
+
+  test("kendi erişmediği numaraya erişimi olan kullanıcının şifresini sıfırlayamaz, onu silemez", async () => {
+    const { lead, patron, a, aliId } = await leader();
+    expect((await lead("PUT", `/api/users/${aliId}`, { password: "ele-gecir-1" })).status).toBe(403);
+    expect((await lead("PUT", `/api/users/${aliId}`, { active: false })).status).toBe(403);
+    expect((await lead("DELETE", `/api/users/${aliId}`)).status).toBe(403);
+    // Erişimi kendi kapsamında olan kullanıcıyı yönetebilir.
+    const veliId = await t.addUser("veli", ROLE.temsilci, [{ numberId: a, access: "write" }]);
+    expect((await lead("PUT", `/api/users/${veliId}`, { password: "yeni-sifre-1" })).status).toBe(200);
+    // Patron (tüm numaraları görür) herkesi yönetir.
+    expect((await patron("PUT", `/api/users/${aliId}`, { password: "yeni-sifre-2" })).status).toBe(200);
+  });
+});
+
+describe("giriş denemesi sınırı (kullanıcı adı + IP, IP)", () => {
+  const from = (ip: string, username: string, password: string) =>
+    t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": `10.0.0.9, ${ip}` },
+      body: JSON.stringify({ username, password }),
+    });
+
+  test("başka adresten gelen saldırgan gerçek kullanıcıyı kilitleyemez", async () => {
+    t = setup({ TRUST_PROXY: "true" });
+    await t.addUser("ali", ROLE.temsilci);
+    for (let i = 0; i < 5; i++) expect((await from("1.1.1.1", "ali", "yanlis")).status).toBe(401);
+    expect((await from("1.1.1.1", "ali", PASSWORD)).status).toBe(429);
+    expect((await from("2.2.2.2", "ali", PASSWORD)).status).toBe(200);
+    // Hatalı deneme kaydında adres de yazar (Caddy'nin eklediği son değer).
+    const detail = t.db.query<{ detail: string }, []>("SELECT detail FROM audit_log WHERE action = 'auth.login_failed' LIMIT 1").get()!.detail;
+    expect(detail).toBe("IP 1.1.1.1");
+  });
+
+  test("çok sayıda kullanıcı adı deneyen adres engellenir", async () => {
+    t = setup({ TRUST_PROXY: "true" });
+    await t.addUser("ali", ROLE.temsilci);
+    for (let i = 0; i < 20; i++) expect((await from("3.3.3.3", `kisi${i}`, "yanlis")).status).toBe(401);
+    expect((await from("3.3.3.3", "ali", PASSWORD)).status).toBe(429);
+    expect((await from("4.4.4.4", "ali", PASSWORD)).status).toBe(200);
+  });
+
+  test("TRUST_PROXY kapalıyken X-Forwarded-For dikkate alınmaz", async () => {
+    await t.addUser("ali", ROLE.temsilci);
+    for (let i = 0; i < 5; i++) expect((await from(`5.5.5.${i}`, "ali", "yanlis")).status).toBe(401);
+    expect((await from("6.6.6.6", "ali", PASSWORD)).status).toBe(429);
+  });
+});
+
+describe("etkinlik kaydı numara erişimiyle sınırlı", () => {
+  test("tüm numaraları görmeyen denetçi yalnızca görebildiği numaraların kayıtlarını görür", async () => {
+    const { patron, a, chatB } = await prepare([]);
+    await t.inbound(patron, a, "905320000002", "Açık", "A mesajı");
+    const chatA = (await patron("GET", `/api/numbers/${a}/chats`)).json.chats[0].id as number;
+    await patron("POST", `/api/chats/${chatA}/messages`, { text: "A yanıtı" });
+    await patron("POST", `/api/chats/${chatB}/messages`, { text: "B yanıtı" });
+    const role = (await patron("POST", "/api/roles", { name: "Denetçi", permissions: ["audit.view", "data.export"] })).json.role;
+    await t.addUser("denetci", role.id, [{ numberId: a, access: "read" }]);
+    const denetci = await t.login("denetci");
+
+    const sends = (list: { action: string; target: string }[]) => list.filter((e) => e.action === "message.send").map((e) => e.target);
+    expect(sends((await patron("GET", "/api/audit")).json.entries).sort()).toEqual(["A → Açık", "B → Gizli"]);
+    const seen = (await denetci("GET", "/api/audit")).json.entries as { action: string; target: string }[];
+    expect(sends(seen)).toEqual(["A → Açık"]);
+    // Numarasız kayıtlar (rol oluşturma gibi) görünür; B'ye ait numara kaydı görünmez.
+    expect(seen.some((e) => e.action === "role.create")).toBe(true);
+    expect(seen.some((e) => e.action === "number.create" && e.target.startsWith("B"))).toBe(false);
+  });
+});

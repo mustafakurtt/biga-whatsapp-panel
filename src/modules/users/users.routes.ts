@@ -49,10 +49,24 @@ export const createUsersRoutes = (deps: AppDeps) => {
   const assignable = (me: SessionUser, role: RoleView) => {
     if (!isSubset(role.permissions, me.permissions)) throw forbidden("Kendinizden yetkili bir rol veremezsiniz");
   };
+  // Tüm numaraları görmeyen yönetici, kendisinin erişemediği bir numaraya erişimi olan kullanıcıyı yönetemez
+  // (şifresini sıfırlayıp onun hesabıyla o numaraya ulaşmak yetki yükseltmesi olurdu). Etkin seviye karşılaştırılır.
+  const coversUser = (me: SessionUser, user: { numbers: NumberGrant[] }, role: RoleView): boolean => {
+    if (has(me, "numbers.view_all")) return true;
+    const sends = role.permissions.includes("messages.send");
+    return user.numbers.every((g) => {
+      const mine = accessTo(deps.db, me, g.numberId);
+      return mine !== null && (g.access !== "write" || !sends || mine === "write");
+    });
+  };
   const manageableUser = (me: SessionUser, id: number) => {
     const user = repo.get(id);
     if (!user) throw notFound("Kullanıcı bulunamadı");
-    assignable(me, roleOrFail(user.roleId));
+    const role = roleOrFail(user.roleId);
+    assignable(me, role);
+    if (id !== me.id && !coversUser(me, user, role)) {
+      throw forbidden("Bu kullanıcının sizin erişmediğiniz numaralara erişimi var; onu yönetemezsiniz");
+    }
     return user;
   };
   // Tüm numaraları görmeyen yönetici, kendi erişiminden fazlasını kimseye veremez; kendi erişimini de değiştiremez.

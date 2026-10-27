@@ -50,6 +50,12 @@ export function handleLiveEvent(qc: QueryClient, ev: LiveEvent, meId: number): v
     case "tags_changed":
       void qc.invalidateQueries({ queryKey: qk.tags });
       break;
+    case "chats_synced":
+      // Geçmiş eşitlemesi ya da rehber adları: numaranın sohbet listesi ve açık sohbetler yeniden okunur.
+      void qc.invalidateQueries({ queryKey: qk.chatsOf(ev.numberId) });
+      void qc.invalidateQueries({ queryKey: ["chat"] });
+      void qc.invalidateQueries({ queryKey: ["messages"], type: "active" });
+      break;
     case "number_status":
       qc.setQueryData<NumberView[]>(qk.numbers, (list) => list?.map((n) => (n.id === ev.numberId ? { ...n, status: ev.status } : n)));
       break;

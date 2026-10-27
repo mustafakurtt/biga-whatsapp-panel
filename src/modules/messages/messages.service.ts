@@ -1,14 +1,16 @@
 // Mesajların tek giriş noktası: kaydeder, canlı akışa yayar, push bildirimi gönderir.
 import type { Logger } from "@mustafakurtt/hono-core/logger";
 import type { Database } from "../../db/client";
-import type { InboundEvent, LiveHub, MessageService, Notifier } from "../../shared/contracts";
-import { displayFromRemote } from "../../shared/phone";
+import type { InboundEvent, InboundMessage, LiveHub, MessageService, Notifier } from "../../shared/contracts";
+import { cleanName, displayFromRemote } from "../../shared/phone";
 import type { ChatRow, NumberRow } from "../../shared/types";
 import { type MessageView, createChatsRepository } from "../chats/chats.repository";
 import { createNumbersRepository } from "../numbers/numbers.repository";
 
 const PREVIEW_LENGTH = 140;
 const preview = (text: string) => (text.length > PREVIEW_LENGTH ? `${text.slice(0, PREVIEW_LENGTH)}…` : text);
+// Geçmiş eşitlemesinde her sohbetten içe aktarılan en yeni mesaj sayısı.
+export const HISTORY_PER_CHAT = 5;
 
 export const createMessageService = (deps: {
   db: Database;
@@ -38,6 +40,8 @@ export const createMessageService = (deps: {
       .catch((err) => logger.warn({ err }, "push gönderilemedi"));
   };
 
+  // Mesajı kaydeder. quiet (geçmişten içe aktarma): okunmamış sayılmaz, sohbet yeniden açılmaz,
+  // canlı mesaj olayı ve bildirim gönderilmez. Yeni kaydedildiyse true.
   const save = (
     number: NumberRow,
     chat: ChatRow,
@@ -49,7 +53,8 @@ export const createMessageService = (deps: {
       body: string;
       ts: number;
     },
-  ) => {
+    quiet = false,
+  ): boolean => {
     const incoming = m.source === "contact";
     const id = chats.insertMessage({
       chatId: chat.id,
@@ -61,9 +66,43 @@ export const createMessageService = (deps: {
       body: m.body,
       ts: m.ts,
     });
-    if (id === null) return; // daha önce kaydedilmiş
-    const updated = chats.touch(chat.id, m.body, m.ts, incoming);
-    announce(number, updated, chats.message(id)!);
+    if (id === null) return false; // daha önce kaydedilmiş
+    const updated = chats.touch(chat.id, m.body, m.ts, incoming && !quiet);
+    if (!quiet) announce(number, updated, chats.message(id)!);
+    return true;
+  };
+
+  const chatFor = (number: NumberRow, m: Pick<InboundMessage, "remoteId" | "source" | "contactName">) =>
+    chats.findOrCreate(
+      number.id,
+      m.remoteId,
+      m.source === "contact" ? m.contactName : null,
+      displayFromRemote(m.remoteId),
+    );
+
+  // Geçmiş: sohbet başına en yeni HISTORY_PER_CHAT mesaj, sessizce. Liste değiştiyse tek bir olay yayılır.
+  const importHistory = (number: NumberRow, list: InboundMessage[]) => {
+    const byChat = new Map<string, InboundMessage[]>();
+    for (const m of list) byChat.set(m.remoteId, [...(byChat.get(m.remoteId) ?? []), m]);
+    let saved = 0;
+    for (const group of byChat.values()) {
+      const latest = group.sort((a, b) => a.ts - b.ts).slice(-HISTORY_PER_CHAT);
+      // Ad için en yeni müşteri mesajındaki profil adı kullanılır.
+      const named = [...latest].reverse().find((m) => m.source === "contact" && cleanName(m.contactName));
+      const chat = chatFor(number, named ?? latest[0]!);
+      // Geçmiş birkaç parça halinde gelir: sınır sohbetin toplamına uygulanır. Yeniden eskiye gidilir;
+      // sohbette bundan yeni HISTORY_PER_CHAT mesaj zaten varsa daha eskisi alınmaz.
+      for (const m of [...latest].reverse()) {
+        if (chats.countNewer(chat.id, m.ts) >= HISTORY_PER_CHAT) break;
+        if (save(number, chat, { providerId: m.providerId, source: m.source, sentBy: null, asUser: null, body: m.body, ts: m.ts }, true)) {
+          saved++;
+        }
+      }
+    }
+    if (saved > 0) {
+      logger.info({ number: number.id, saved }, "geçmiş mesajlar içe aktarıldı");
+      hub.publish(number.id, { type: "chats_synced", numberId: number.id });
+    }
   };
 
   return {
@@ -77,13 +116,21 @@ export const createMessageService = (deps: {
         return;
       }
 
-      const chat = chats.findOrCreate(
-        number.id,
-        event.remoteId,
-        event.source === "contact" ? event.contactName : null,
-        displayFromRemote(event.remoteId),
-      );
-      save(number, chat, {
+      if (event.kind === "contacts") {
+        const list = event.contacts
+          .map((c) => ({ remoteId: c.remoteId, name: cleanName(c.name) }))
+          .filter((c): c is { remoteId: string; name: string } => c.name !== null);
+        if (list.length === 0) return;
+        if (chats.saveContacts(number.id, list) > 0) hub.publish(number.id, { type: "chats_synced", numberId: number.id });
+        return;
+      }
+
+      if (event.kind === "history") {
+        importHistory(number, event.messages);
+        return;
+      }
+
+      save(number, chatFor(number, event), {
         providerId: event.providerId,
         source: event.source,
         sentBy: null,

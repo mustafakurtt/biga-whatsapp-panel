@@ -47,7 +47,8 @@ export const createNumbersRoutes = (deps: AppDeps) => {
     if (!number) throw notFound("Numara bulunamadı");
     return number;
   };
-  // Görülemeyen numara için de 404: var olduğu bilgisi sızmasın.
+  // Görülemeyen numara için de 404: var olduğu bilgisi sızmasın. Yönetim işlemleri (eşleştir, QR, yenile, sil)
+  // de bunu kullanır: `numbers.manage` yalnızca görebildiği numaralarda geçerlidir.
   const visibleNumber = (user: SessionUser, id: number): { number: NumberRow; access: NumberAccess } => {
     const number = numberOrFail(id);
     const access = accessTo(deps.db, user, id);
@@ -73,22 +74,27 @@ export const createNumbersRoutes = (deps: AppDeps) => {
       const provider = parsed.data.provider ?? deps.env.PROVIDER;
       if (provider === "mock" && !mockAllowed(deps.env)) throw badRequest("Test numaraları bu sunucuda kapalı");
       const number = numbers.create(parsed.data.label, phone, provider);
+      // Tüm numaraları görmeyen yönetici eklediği numarayı görsün ve yönetebilsin (yönetim işlemleri görünürlük ister).
+      const me = c.get("user");
+      if (!has(me, "numbers.view_all")) {
+        deps.db.query("INSERT OR IGNORE INTO user_numbers (user_id, number_id, access) VALUES (?, ?, 'write')").run(me.id, number.id);
+      }
       // Oturum açılamasa da numara kalır; "Eşleştirme kodu al" tekrar dener.
       await deps.provider.createSession(number.session).catch((err) => deps.logger.warn({ err }, "oturum açılamadı"));
-      audit(c, deps, "number.create", `${number.label} (+${phone})`, provider === "mock" ? "test numarası" : "WhatsApp");
+      audit(c, deps, "number.create", `${number.label} (+${phone})`, provider === "mock" ? "test numarası" : "WhatsApp", number.id);
       return c.json({ number: managedView(c.get("user"), number.id) });
     })
     .post("/:id/pair", async (c) => {
       requireManager(c.get("user"));
-      const number = numberOrFail(idParam(c));
+      const { number } = visibleNumber(c.get("user"), idParam(c));
       if (number.status === "WORKING" || number.status === "RESTRICTED") throw badRequest("Bu numara zaten bağlı");
       const code = await deps.provider.requestPairingCode(number.session, number.phone);
-      audit(c, deps, "number.pair", number.label);
+      audit(c, deps, "number.pair", number.label, null, number.id);
       return c.json({ code });
     })
     .get("/:id/qr", async (c) => {
       requireManager(c.get("user"));
-      const number = numberOrFail(idParam(c));
+      const { number } = visibleNumber(c.get("user"), idParam(c));
       if (number.status === "WORKING") throw badRequest("Bu numara zaten bağlı");
       const png = await deps.provider.getQr(number.session);
       if (!png) throw notFound("QR kodu hazır değil, birkaç saniye sonra tekrar deneyin");
@@ -96,7 +102,7 @@ export const createNumbersRoutes = (deps: AppDeps) => {
     })
     .post("/:id/refresh", async (c) => {
       requireManager(c.get("user"));
-      const number = numberOrFail(idParam(c));
+      const { number } = visibleNumber(c.get("user"), idParam(c));
       const { status, meId } = await deps.provider.getStatus(number.session);
       numbers.setStatus(number.id, status, meId);
       if (status !== number.status) deps.hub.publish(number.id, { type: "number_status", numberId: number.id, status });
@@ -104,10 +110,10 @@ export const createNumbersRoutes = (deps: AppDeps) => {
     })
     .delete("/:id", async (c) => {
       requireManager(c.get("user"));
-      const number = numberOrFail(idParam(c));
+      const { number } = visibleNumber(c.get("user"), idParam(c));
       await deps.provider.deleteSession(number.session).catch((err) => deps.logger.warn({ err }, "oturum silinemedi"));
       numbers.remove(number.id);
-      audit(c, deps, "number.delete", number.label);
+      audit(c, deps, "number.delete", number.label, null, number.id);
       return c.json({ ok: true });
     })
     .get("/:id/chats", (c) => {
@@ -143,7 +149,7 @@ export const createNumbersRoutes = (deps: AppDeps) => {
         body: parsed.data.text,
         providerId,
       });
-      audit(c, deps, "chat.start", `${number.label} → ${chat.name}`);
+      audit(c, deps, "chat.start", `${number.label} → ${chat.name}`, null, number.id);
       return c.json({ chat: chats.get(chat.id) });
     });
 };

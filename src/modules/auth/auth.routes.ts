@@ -1,10 +1,12 @@
 // Giriş, çıkış, "ben kimim" ve ekranına geçme.
 import { hashPassword, verifyPassword } from "@mustafakurtt/hono-core/auth";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { getConnInfo } from "hono/bun";
 import { z } from "zod";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { HttpFailure, badRequest, forbidden, notFound, readJson } from "../../shared/http";
 import { audit } from "../audit/audit.log";
+import { createLimiter } from "./login-limiter";
 import {
   asImpersonated,
   canImpersonate,
@@ -16,14 +18,25 @@ import {
 
 const loginSchema = z.object({ username: z.string().trim().min(1).max(80), password: z.string().min(1).max(200) });
 
-// Kullanıcı adı başına: art arda 5 hatalı denemede 5 dakika kilit.
-const MAX_FAILURES = 5;
-const LOCK_MS = 5 * 60 * 1000;
 const impersonateSchema = z.object({ userId: z.number().int().positive() });
 
 export const createAuthRoutes = (deps: AppDeps) => {
   const { db } = deps;
-  const failures = new Map<string, { count: number; until: number }>();
+  // Kullanıcı adı + IP: 5 hatada 5 dk. IP: 15 dk içinde 20 hatada 15 dk. Ayrıntı: login-limiter.ts
+  const perUser = createLimiter({ max: 5, windowMs: 15 * 60_000, lockMs: 5 * 60_000 });
+  const perIp = createLimiter({ max: 20, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
+  // İstemci adresi: TRUST_PROXY açıksa (Caddy arkasında) X-Forwarded-For'un son değeri, yoksa bağlantı adresi.
+  const ipOf = (c: Context): string => {
+    if (deps.env.TRUST_PROXY) {
+      const last = c.req.header("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean).at(-1);
+      if (last) return last;
+    }
+    try {
+      return getConnInfo(c).remote.address ?? "?";
+    } catch {
+      return "?"; // testler (app.request) bağlantı bilgisi taşımaz
+    }
+  };
   // Var olmayan kullanıcıda da şifre doğrulaması yapılır: yanıt süresi kullanıcının varlığını ele vermesin.
   const dummyHash = hashPassword("biga-panel-yok-kullanici");
 
@@ -31,10 +44,10 @@ export const createAuthRoutes = (deps: AppDeps) => {
     .post("/login", async (c) => {
       const parsed = loginSchema.safeParse(await readJson(c));
       if (!parsed.success) throw badRequest("Kullanıcı adı ve şifre gerekli");
-      const key = parsed.data.username.toLowerCase();
-      const lock = failures.get(key);
-      if (lock && lock.until > Date.now()) {
-        throw new HttpFailure(429, "Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.");
+      const ip = ipOf(c);
+      const key = `${parsed.data.username.toLowerCase()}|${ip}`;
+      if (perUser.locked(key) || perIp.locked(ip)) {
+        throw new HttpFailure(429, "Çok fazla hatalı deneme. Birkaç dakika sonra tekrar deneyin.");
       }
       const row = db
         .query<{ id: number; name: string; password_hash: string; active: number }, [string]>(
@@ -43,14 +56,12 @@ export const createAuthRoutes = (deps: AppDeps) => {
         .get(parsed.data.username);
       const ok = await verifyPassword(parsed.data.password, row?.password_hash ?? (await dummyHash));
       if (!row || !ok) {
-        // Süresi dolmuş kilit sayacı sıfırlar; yoksa denemeler birikir.
-        const expired = lock !== undefined && lock.until > 0 && lock.until <= Date.now();
-        const count = (lock && !expired ? lock.count : 0) + 1;
-        failures.set(key, { count, until: count >= MAX_FAILURES ? Date.now() + LOCK_MS : 0 });
-        deps.audit.record({ actor: null, action: "auth.login_failed", target: parsed.data.username.slice(0, 40) });
+        perUser.fail(key);
+        perIp.fail(ip);
+        deps.audit.record({ actor: null, action: "auth.login_failed", target: parsed.data.username.slice(0, 40), detail: ip === "?" ? null : `IP ${ip.slice(0, 45)}` });
         throw new HttpFailure(401, "Kullanıcı adı veya şifre hatalı");
       }
-      failures.delete(key);
+      perUser.reset(key); // IP sayacı sıfırlanmaz: kendi hesabıyla girip sayacı silmek mümkün olmasın
       if (!row.active) throw forbidden("Hesabınız devre dışı. Yöneticinize başvurun.");
       db.query("UPDATE users SET last_login_at = ? WHERE id = ?").run(Date.now(), row.id);
       await startSession(deps, c, row.id);

@@ -5,6 +5,7 @@ import { post } from "../../api/client";
 import { qk } from "../../api/queries";
 import type { Me } from "../../api/types";
 import { closeMenu, showError, toast } from "../../components/overlays";
+import { forgetPushOnServer } from "../../lib/push";
 
 function useSwitchSession() {
   const qc = useQueryClient();
@@ -49,6 +50,8 @@ export function useStopImpersonation(): () => Promise<void> {
 export function useLogout(): () => Promise<void> {
   const switchTo = useSwitchSession();
   return async () => {
+    // Çıkış yapılan cihaza artık bildirim (mesaj önizlemesi) gitmesin.
+    await forgetPushOnServer();
     try {
       await post("/api/auth/logout");
     } catch {

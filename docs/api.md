@@ -7,7 +7,7 @@ Tüm yanıtlar JSON. Hata: `{ "error": "<Türkçe mesaj>" }` ve uygun durum kodu
 - API gövdesi en fazla 1 MB olabilir, fazlası 413 döner.
 - Durum değiştiren istekler (GET/HEAD dışı) yalnızca panelin kendi sayfasından kabul edilir. Tarayıcının `Sec-Fetch-Site` başlığı `same-origin` ya da `none` olmalıdır. Bu başlık yoksa `Origin`, `Host` ile aynı olmalıdır. Aksi halde 403 döner (CSRF koruması).
 Kimlik: `POST /api/auth/login` httpOnly `session` çerezi koyar; sonraki istekler çerezle gelir.
-- Aynı kullanıcı adıyla art arda 5 hatalı giriş 5 dakikalık kilide yol açar (429).
+- Aynı kullanıcı adı ve IP adresiyle art arda 5 hatalı giriş 5 dakikalık kilide yol açar (429). Aynı IP'den 15 dakikada 20 hatalı giriş o adresi 15 dakika engeller. Başka adresten gelen denemeler gerçek kullanıcıyı kilitlemez.
 - Kullanıcının şifresi değişince o kullanıcının diğer tüm oturumları düşer (401). Kendi şifresini değiştiren kişinin çerezi yenilenir, o oturumda kalır.
 WhatsApp tarafı Baileys ile çalışır (her numara sunucuya bağlı cihaz olarak eklenir). WhatsApp hatası 502 döner.
 Görülemeyen numara ya da sohbet için 404 döner (var olduğu bilgisi sızmasın).
@@ -21,7 +21,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | İzin | Anlamı |
 | --- | --- |
 | `numbers.view_all` | Atama olmadan tüm numaraları görür |
-| `numbers.manage` | Numara ekler, siler, bağlar |
+| `numbers.manage` | Numara ekler; görebildiği numaraları siler, bağlar, yeniler. Eklediği numaraya yazma erişimi kendiliğinden verilir |
 | `messages.send` | Yazma erişimi olan numaralarda mesaj gönderir |
 | `chats.start` | Yeni sohbet başlatır |
 | `chats.assign` | Sohbeti başkasına atar (kendine üstlenmek için yazma erişimi yeter) |
@@ -53,6 +53,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 
 **Yetki dağıtma sınırı:**
 - `users.manage` sahibi kendinde olmayan bir izni role ya da kullanıcıya veremez.
+- `numbers.view_all` yoksa, kendi erişmediği bir numaraya erişimi olan kullanıcıyı düzenleyemez, devre dışı bırakamaz, silemez, şifresini sıfırlayamaz (403).
 - `numbers.view_all` yoksa kendi erişiminden fazlasını (görmediği numara ya da okuduğu numaraya yazma) kimseye veremez ve kendi numara erişimini değiştiremez (403).
 
 ## Nesneler
@@ -93,10 +94,10 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | DELETE | /api/users/:id | `users.manage` | — | `{ok:true}` (kendinizi silemezsiniz) |
 | GET | /api/numbers | giriş yapmış | — | `{numbers:[Number]}` (görebildikleri) |
 | POST | /api/numbers | `numbers.manage` | `{label,phone,provider?}` (`provider` verilmezse sunucu varsayılanı; test numaraları kapalıysa `mock` 400) | `{number}` (WhatsApp oturumu da açılır) |
-| POST | /api/numbers/:id/pair | `numbers.manage` | — | `{code}` (8 haneli eşleştirme kodu; bağlıysa 400) |
-| GET | /api/numbers/:id/qr | `numbers.manage` | — | PNG resim (yedek bağlanma yolu) |
-| POST | /api/numbers/:id/refresh | `numbers.manage` | — | `{number}` |
-| DELETE | /api/numbers/:id | `numbers.manage` | — | `{ok:true}` |
+| POST | /api/numbers/:id/pair | `numbers.manage` + numarayı görme | — | `{code}` (8 haneli eşleştirme kodu; bağlıysa 400) |
+| GET | /api/numbers/:id/qr | `numbers.manage` + numarayı görme | — | PNG resim (yedek bağlanma yolu) |
+| POST | /api/numbers/:id/refresh | `numbers.manage` + numarayı görme | — | `{number}` |
+| DELETE | /api/numbers/:id | `numbers.manage` + numarayı görme | — | `{ok:true}` |
 | GET | /api/numbers/:id/chats | numarayı gören (en fazla 500 sohbet) | `?filter=all\|unread\|mine\|unassigned&status=open\|closed&tag=<id>&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `status` verilmezse hepsi gelir. `q`: ad, numara ya da son mesajda arar |
 | POST | /api/numbers/:id/chats | `chats.start` + yazma erişimi | `{phone,text}` | `{chat}` yeni sohbet başlatır ve ilk mesajı gönderir (numara WhatsApp kullanmıyorsa 400) |
 | GET | /api/chats/:id | sohbeti gören | — | `{chat}` |
@@ -128,9 +129,9 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | POST | /api/push/subscribe | giriş yapmış (ekranına geçmişken 403) | PushSubscription JSON | `{ok:true}` (endpoint bilinen bir tarayıcı push servisinde olmalı: FCM, Mozilla, Apple, Windows) |
 | POST | /api/push/unsubscribe | giriş yapmış | `{endpoint}` | `{ok:true}` (endpoint kimin adına kayıtlı olursa olsun silinir) |
 | GET | /api/config | giriş yapmış | — | `{mockAllowed, defaultProvider, pushEnabled}` |
-| POST | /api/dev/inbound | `numbers.manage`, test numaraları açıkken | `{numberId,from,name,text}` | `{ok:true}` test numarasına sahte gelen mesaj (gerçek numaraya 400) |
+| POST | /api/dev/inbound | `numbers.manage` + numarayı görme, test numaraları açıkken | `{numberId,from,name,text}` | `{ok:true}` test numarasına sahte gelen mesaj (gerçek numaraya 400) |
 
-`AuditEntry`: `{id, ts, actor_id, actor_name, as_user_id, as_user_name, action, target, detail}`.
+`AuditEntry`: `{id, ts, actor_id, actor_name, as_user_id, as_user_name, action, target, detail, number_id}`. `number_id` numarayla ilgili kayıtlarda doludur. `numbers.view_all` izni olmayan kişi yalnızca görebildiği numaraların kayıtlarını ve numarasız kayıtları görür.
 - `action` şunlardan biridir: `auth.login`, `auth.login_failed`, `auth.logout`, `impersonate.start`, `impersonate.stop`, `message.send`, `chat.start`, `chat.assign`, `chat.status`, `chat.tags`, `chat.export`, `note.create`, `note.delete`, `tag.create`, `tag.update`, `tag.delete`, `audit.export`, `number.create`, `number.delete`, `number.pair`, `user.create`, `user.update`, `user.delete`, `role.create`, `role.update`, `role.delete`, `quick_reply.create`, `quick_reply.update`, `quick_reply.delete`.
 - `target` kısa bir açıklamadır (ör. `"Satış → Ayşe"`). `detail` metin ya da null.
 
@@ -145,6 +146,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 - `{type:"note", numberId, chatId, note}` yeni not; `{type:"note_deleted", numberId, chatId, noteId}`.
 - `{type:"viewers", numberId, chatId, viewers:[Viewer]}`: sohbete bakanlar değişti.
 - `{type:"tags_changed"}`: etiket listesi değişti; `GET /api/tags` yeniden okunur.
+- `{type:"chats_synced", numberId}`: geçmiş eşitlemesi ya da rehber adları numaranın sohbet listesini toplu değiştirdi; `GET /api/numbers/:id/chats` yeniden okunur.
 - `{type:"number_status", numberId, status}`: `WORKING`, `SCAN_QR_CODE`, `FAILED`, `STOPPED`, `STARTING`, `RESTRICTED`.
   - `RESTRICTED`: WhatsApp hesabı kısıtladı (hata 463). Numara bağlı ve mesaj almaya devam eder, ama panelden gönderim 24 saat durdurulur; gönderim denemesi 502 döner.
   - `STOPPED` şu durumlarda da gelir: oturum başka bir yerde açıldı (440) ya da 10 yeniden bağlanma denemesi bitti.

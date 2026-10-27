@@ -8,7 +8,7 @@ Bu rehber paneli her gün kullanacak kişiler içindir. Her rol için adım adı
 
 ## Herkes için: ilk adımlar
 
-1. **Giriş yapın.** Yöneticinizin verdiği kullanıcı adı ve şifreyle giriş yapın. Oturumunuz bu cihazda 7 gün açık kalır. Şifre art arda 5 kez yanlış girilirse hesap 5 dakika kilitlenir, sonra yeniden deneyebilirsiniz.
+1. **Giriş yapın.** Yöneticinizin verdiği kullanıcı adı ve şifreyle giriş yapın. Oturumunuz bu cihazda 7 gün açık kalır. Şifre art arda 5 kez yanlış girilirse bu cihazdan giriş 5 dakika kilitlenir, sonra yeniden deneyebilirsiniz. Başka birinin hatalı denemeleri sizi kilitlemez.
 2. **Paneli uygulama olarak kurun (önerilir).** Telefonda tarayıcının menüsünden *Ana ekrana ekle* seçeneğini kullanın. Bilgisayarda adres çubuğundaki *Yükle* simgesine tıklayın.
 3. **Bildirimlere izin verin.** Panel sorduğunda izin verin. Böylece panel kapalıyken de yeni mesajlardan haberiniz olur. iPhone'da bildirimler, panel ana ekrana eklendikten sonra çalışır.
 4. **Temayı seçin.** Açık, koyu ya da cihazınızın temasını izleyen görünüm.
@@ -117,4 +117,5 @@ Roller ihtiyaca göre tasarlanır. Örneğin tüm numaraları okuyabilen, kayıt
 
 - Panelden gönderilen her mesaj, gönderenin adıyla kaydedilir. Yöneticiler ekip üyelerinin ekranını görebilir. Bu kullanım şirket politikası (KVKK aydınlatması gibi) çerçevesinde ekibe duyurulmalıdır.
 - Fotoğraf, video, ses kaydı ve belge gibi içerikler panelde `[Fotoğraf]`, `[Ses kaydı]` gibi etiketlerle görünür. İçeriği görmek için numaranın telefonundaki WhatsApp'ı kullanın.
-- Panel, numara bağlandığı andan itibaren mesajları kaydeder.
+- Numara ilk bağlandığında son sohbetler panele gelir, her sohbetten son 5 mesajla. Bunlar okunmamış sayılmaz. Daha eski mesajlar için telefondaki WhatsApp'ı kullanın.
+- Sohbetler telefonunuzun rehberindeki adla görünür. Rehberde kayıtlı değilse kişinin WhatsApp profil adı, o da yoksa numarası görünür.

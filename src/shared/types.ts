@@ -99,4 +99,6 @@ export type LiveEvent =
   | { type: "note_deleted"; numberId: number; chatId: number; noteId: number }
   | { type: "viewers"; numberId: number; chatId: number; viewers: Viewer[] }
   | { type: "tags_changed" }
+  // Geçmiş eşitlemesi ya da rehber adları sohbet listesini toplu değiştirdi; liste yeniden okunur.
+  | { type: "chats_synced"; numberId: number }
   | { type: "number_status"; numberId: number; status: NumberStatus };

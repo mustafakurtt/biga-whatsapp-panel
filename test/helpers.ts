@@ -16,8 +16,8 @@ import type { Notifier } from "../src/shared/contracts";
 export const ROLE = { patron: 1, temsilci: 2, salt_okunur: 3 } as const;
 export const PASSWORD = "secret1";
 
-export const setup = () => {
-  const env = parseEnv({ JWT_SECRET: "x".repeat(32), PROVIDER: "mock", DATABASE_PATH: ":memory:" });
+export const setup = (envOverrides: Record<string, string> = {}) => {
+  const env = parseEnv({ JWT_SECRET: "x".repeat(32), PROVIDER: "mock", DATABASE_PATH: ":memory:", ...envOverrides });
   const logger = createLogger({ level: "silent" });
   const db = openDatabase(":memory:");
   const hub = createLiveHub(db);
@@ -78,7 +78,7 @@ export const setup = () => {
   const inbound = (api: Awaited<ReturnType<typeof login>>, numberId: number, from: string, name: string, text: string) =>
     api("POST", "/api/dev/inbound", { numberId, from, name, text });
 
-  return { app, db, hub, pushes, users, addUser, login, addNumber, inbound, realSent };
+  return { app, db, hub, messages, pushes, users, addUser, login, addNumber, inbound, realSent };
 };
 
 export type TestContext = ReturnType<typeof setup>;

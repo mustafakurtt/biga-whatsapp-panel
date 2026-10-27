@@ -91,7 +91,7 @@ resume(sessions) · createSession(session) · requestPairingCode(session, phone)
 getStatus(session) · sendText(session, chatId, text) · exists(session, chatId) · deleteSession(session) · stop()
 ```
 
-Oturum adı numaranın kimliğinden türetilir (`n1`, `n2`…) ve `numbers.session` sütununda durur. Sağlayıcılar gelen mesajları ve durum değişikliklerini, kurulurken verilen `onEvent` ile normalize edilmiş `InboundEvent` olarak bildirir.
+Oturum adı numaranın kimliğinden ve rastgele bir ekten türetilir (`n2-1a2b3c`; eski kayıtlarda `n1`) ve `numbers.session` sütununda durur. Ek gereklidir, çünkü SQLite silinen numaranın kimliğini yeni numaraya verebilir ve ek olmazsa yeni numara eski oturum klasörünü devralır. Sağlayıcılar gelen mesajları ve durum değişikliklerini, kurulurken verilen `onEvent` ile normalize edilmiş `InboundEvent` olarak bildirir.
 
 **Yönlendirici (`routing.provider.ts`).** Uygulamanın gördüğü tek sağlayıcıdır. Her çağrıda oturumun numarasındaki `provider` sütununu (`baileys` | `mock`) okur ve çağrıyı ilgili sağlayıcıya iletir. Gerçek ve test numaraları bu sayede aynı panelde yan yana çalışır. Test sağlayıcısı kapalıysa (`ALLOW_MOCK`) test numarasına yapılan çağrı açıklayıcı bir `ProviderError` ile reddedilir.
 
@@ -99,9 +99,10 @@ Oturum adı numaranın kimliğinden türetilir (`n1`, `n2`…) ve `numbers.sessi
 
 | Konu | Uygulama |
 | --- | --- |
-| Soket ayarları | `markOnlineOnConnect: false`, `syncFullHistory: false`, `shouldSyncHistoryMessage: () => false`, `emitOwnEvents: false` |
+| Soket ayarları | `markOnlineOnConnect: false`, `syncFullHistory: false`, `emitOwnEvents: false`. `shouldSyncHistoryMessage` Baileys varsayılanındadır (FULL hariç tüm eşitleme türleri). Eşitlemeyi tamamen kapatmak Baileys'in ilk LID eşlemelerini almasını engeller, Baileys bunun için açılışta uyarı verir |
+| Geçmiş ve rehber | `messaging-history.set` (yalnızca ilk eşleştirmede gelir) → rehber adları `contacts`, mesajlar `history` olayı olarak. `contacts.upsert` / `contacts.update` → `contacts` olayı. Rehberden yalnızca kayıtlı ad (`name`) alınır |
 | Gönderim sırası | Numara başına Promise zinciri. İki gönderim arası en az 3 sn + 0–2 sn rastgele. Gönderim öncesi `composing` → 800 ms + uzunluğa göre en fazla 1,5 sn → `paused` |
-| Kısıtlama (463) | `messages.update` içinde 463 hata kodu görülünce oturum 24 saat `RESTRICTED` olur ve `sendText` açıklayıcı bir hatayla reddeder. Süre dolunca durum `WORKING`'e döner |
+| Kısıtlama (463) | `messages.update` içinde 463 hata kodu görülünce oturum 24 saat `RESTRICTED` olur ve `sendText` açıklayıcı bir hatayla reddeder. Süre oturum klasörüne (`panel-restricted.json`) yazılır, sunucu yeniden başlasa da sürer. Süre dolunca durum `WORKING`'e döner |
 | Bağlantı kopması | `loggedOut` → oturum klasörü silinir, `FAILED`. `connectionReplaced` (440) → `STOPPED`, yeniden deneme yok. `forbidden` (403) → `FAILED`, yeniden deneme yok. `restartRequired` → hemen yeniden açılır. Diğerleri → üstel geri çekilme (2 sn'den 60 sn'ye), en fazla 10 deneme, sonra `STOPPED` |
 | Yeni sohbet | `exists()` → `sock.onWhatsApp()`. Rota, daha önce sohbeti olmayan numaraya göndermeden önce bunu çağırır |
 | Kimlik çözümleme | Gruplar, yayın listeleri ve kanallar atlanır. LID kimlikleri `remoteJidAlt` ya da LID eşlemesiyle telefon numaralı kimliğe çevrilir |
@@ -124,6 +125,11 @@ Sağlayıcı olayı (InboundEvent)            Panelden gönderim (POST …/messa
         │                                          │
         ├─ kind=status → numbers.status güncellenir → LiveHub: number_status
         │
+        ├─ kind=contacts → contacts tablosu + var olan sohbetlerin adı → değiştiyse LiveHub: chats_synced
+        │
+        ├─ kind=history → sohbet başına en yeni 5 mesaj, save(quiet): okunmamış/yeniden açma,
+        │                 mesaj olayı ve push yok → bir şey kaydedildiyse LiveHub: chats_synced
+        │
         └─ kind=message → chats.findOrCreate → save()
                                    │
                     messages INSERT OR IGNORE (provider_id UNIQUE: tekrar gelen olay atlanır)
@@ -136,13 +142,15 @@ Sağlayıcı olayı (InboundEvent)            Panelden gönderim (POST …/messa
                     Notifier.notifyNumber(numberId, {title, body, url:"/?chat=<id>"}, except=gönderen)
 ```
 
+Sohbet adı (`chats.findOrCreate`): `contacts` tablosundaki rehber adı → müşteri mesajındaki profil adı (`pushName`) → numara. Harf ya da rakam içermeyen adlar (`cleanName`, `shared/phone.ts`) yok sayılır. Okurken de (`toChat`) böyle bir ad kayıtlıysa numara döner. Rehber adı olan sohbetin adını profil adı ezmez.
+
 Kaynak alanı: Baileys'te `fromMe` olmayan mesaj `contact`, `fromMe` olan mesaj `phone` olur. Panelden gönderilenler soketten ikinci kez gelmez (`emitOwnEvents: false`), `recordPanelSend` ile `panel` kaynağıyla, `sent_by` (gerçek kişi) ve `as_user` (ekranına geçilmişse adına yazılan kişi) alanlarıyla kaydedilir.
 
 ## Oturum, kimlik ve ekranına geçme
 
 **Oturum çerezi.** Giriş başarılı olunca imzalı bir JWT `session` adlı çereze yazılır: `httpOnly`, `SameSite=Lax`, `Secure` (`COOKIE_SECURE` ile), 7 gün. Talepler (claims) yalnızca `{ uid, tv }` ya da ekranına geçilmişse `{ uid, as, tv }` içerir. İzinler çereze **yazılmaz**. `tv`, oturum açıldığı andaki `users.token_version` değeridir. Şifre değişince bu sayı artar ve o kullanıcının eski çerezleri geçersiz olur. Kendi şifresini değiştiren kullanıcıya yeni sürümle çerez yeniden yazılır, o oturumda kalır.
 
-**Giriş.** `POST /api/auth/login` kullanıcı adı başına bellekte hatalı deneme sayar: art arda 5 hatada 5 dakika kilit (429). Başarılı giriş sayacı sıfırlar. Var olmayan kullanıcıda da sabit bir sahte hash'e karşı şifre doğrulaması yapılır, yanıt süresi kullanıcının varlığını ele vermez. Kullanıcı adı en fazla 80, şifre en fazla 200 karakter olabilir. Hatalı denemeler etkinlik kaydına 40 karaktere kısaltılmış kullanıcı adıyla yazılır.
+**Giriş.** `POST /api/auth/login` hatalı denemeleri bellekte iki katmanda sayar (`login-limiter.ts`): kullanıcı adı + IP için 5 hatada 5 dakika, IP için 15 dakikada 20 hatada 15 dakika kilit (429). Başarılı giriş yalnızca kullanıcı adı + IP sayacını sıfırlar, IP sayacını sıfırlamaz. İstemci adresi `TRUST_PROXY` açıksa `X-Forwarded-For`'un son değerinden (Caddy'nin eklediği), değilse bağlantıdan okunur. Hatalı deneme kaydında adres de yazar. Var olmayan kullanıcıda da sabit bir sahte hash'e karşı şifre doğrulaması yapılır, yanıt süresi kullanıcının varlığını ele vermez. Kullanıcı adı en fazla 80, şifre en fazla 200 karakter olabilir. Hatalı denemeler etkinlik kaydına 40 karaktere kısaltılmış kullanıcı adıyla yazılır.
 
 **İzinler her istekte yüklenir.** `requireUser` her istekte `resolveSession` ile `users` ve `roles` tablolarından kullanıcıyı ve rolün izinlerini okur, `token_version` eşleşmesini denetler. Silinen, devre dışı bırakılan ya da şifresi değişen kullanıcının eski oturumu bir sonraki istekte 401 alır. Aynı çözümleyici bağlama `resolve` olarak konur ve canlı akış onu her olayda yeniden çağırır. Rol ya da izin değişikliği yeniden giriş gerektirmeden etkili olur.
 
@@ -170,7 +178,7 @@ izleme modu (actor'da impersonate.send yok):  etkin ∩ { numbers.view_all, audi
 
 **Geçiş sırasındaki ek kurallar:** okundu işareti uygulanmaz, "şu an bakıyor" kaydı yapılmaz (`chats.routes.ts`). Push aboneliği açılamaz (`push.routes.ts`, 403). İzleme modunda not eklenemez ve silinemez. Yeni bir geçiş isteği her zaman gerçek kişi (`actor`) adına değerlendirilir, iç içe geçiş oluşmaz.
 
-**Yetki dağıtma sınırı** (`users.routes.ts`): `users.manage` sahibi kendinde olmayan bir izni role veremez ve kendinden yetkili bir rolü atayamaz. `numbers.view_all` izni yoksa kendi erişiminden fazlasını (görmediği numara ya da yalnızca okuduğu numarada yazma) kimseye veremez ve kendi numara erişimini değiştiremez (403).
+**Yetki dağıtma sınırı** (`users.routes.ts`): `users.manage` sahibi kendinde olmayan bir izni role veremez ve kendinden yetkili bir rolü atayamaz. `numbers.view_all` izni yoksa kendi erişiminden fazlasını (görmediği numara ya da yalnızca okuduğu numarada yazma) kimseye veremez ve kendi numara erişimini değiştiremez (403). Kendi erişmediği bir numaraya erişimi olan kullanıcıyı da yönetemez (`coversUser`): yoksa onun şifresini sıfırlayıp o numaraya ulaşabilirdi. Numara yönetimi (eşleştir, QR, yenile, sil, sahte gelen mesaj) de yalnızca görülebilen numaralarda çalışır, diğerlerinde 404 döner.
 
 **Kim yaptı.** `whoFrom(c)` her istekte `{ actor, asUser }` çiftini verir. Mesaj kaydı (`sent_by`, `as_user`), not kaydı (`user_name`, `as_user_name`) ve etkinlik kaydı (`actor_*`, `as_user_*`) bu çifti kullanır.
 
@@ -206,12 +214,13 @@ SQLite, `bun:sqlite` ile `strict` modda açılır. `journal_mode = WAL`, `busy_t
 | `quick_replies` | Hazır yanıtlar | `title`, `body`, `created_by` |
 | `audit_log` | Etkinlik kaydı | `actor_id`, `actor_name`, `as_user_id`, `as_user_name`, `action`, `target`, `detail`, `ts` |
 | `push_subscriptions` | Web Push abonelikleri | `endpoint` (birincil anahtar), `user_id`, `p256dh`, `auth` |
+| `contacts` | Telefon rehberindeki adlar | `(number_id, remote_id)` birincil anahtar, `name` |
 
 Silme davranışı yabancı anahtarlarla tanımlıdır. Numara silinince sohbetleri, mesajları, notları ve atamaları gider (`CASCADE`). Kullanıcı silinince mesajlardaki `sent_by`/`as_user` ve sohbetlerdeki `assigned_to` `NULL` olur (`SET NULL`), erişimleri ve push abonelikleri gider.
 
 ### Şema sürümleri
 
-Şema sürümü `PRAGMA user_version` ile tutulur. Açılışta eksik adımlar tek bir işlem (transaction) içinde sırayla uygulanır. Tablo yeniden kurulumları için işlem süresince yabancı anahtar denetimi kapatılır, ardından `PRAGMA foreign_key_check` ile bütünlük doğrulanır. Güncel sürüm **5**'tir.
+Şema sürümü `PRAGMA user_version` ile tutulur. Açılışta eksik adımlar tek bir işlem (transaction) içinde sırayla uygulanır. Tablo yeniden kurulumları için işlem süresince yabancı anahtar denetimi kapatılır, ardından `PRAGMA foreign_key_check` ile bütünlük doğrulanır. Güncel sürüm **7**'dir.
 
 | Sürüm | İçerik |
 | --- | --- |
@@ -220,6 +229,8 @@ Silme davranışı yabancı anahtarlarla tanımlıdır. Numara silinince sohbetl
 | 3 | Sohbet durumu (`open`/`closed`), `tags`, `chat_tags`, `chat_notes` |
 | 4 | Numara türü (`numbers.provider`: `baileys`/`mock`) |
 | 5 | `users.token_version`: şifre değişince o kullanıcının eski oturumları düşer |
+| 6 | `contacts`: numara başına telefon rehberindeki kişi adları |
+| 7 | `audit_log.number_id`: etkinlik kaydı numara erişimine göre süzülür |
 
 ## Canlı olaylar
 
@@ -230,7 +241,7 @@ Silme davranışı yabancı anahtarlarla tanımlıdır. Numara silinince sohbetl
 - `GET /api/events`: `data: <LiveEvent JSON>` biçiminde adsız SSE mesajları, 25 sn'de bir yorum satırı ping.
 - Her abonelik bir `allow` denetimi taşır. Olay iletilmeden önce oturum `resolve()` ile yeniden çözülür ve numara erişimi denetlenir. Oturum geçersizse (hesap kapatıldı, şifre değişti, geçiş izni kalktı) akış veri göndermeden kapanır. Aynı denetim her ping'de de yapılır.
 
-Olay tipleri (`LiveEvent`, `src/shared/types.ts`): `message`, `chat_updated`, `note`, `note_deleted`, `viewers`, `tags_changed`, `number_status`. Arayüz bu olayları TanStack Query önbelleğine doğrudan yazar (`web/src/features/app/live.ts`, `web/src/api/cache.ts`).
+Olay tipleri (`LiveEvent`, `src/shared/types.ts`): `message`, `chat_updated`, `note`, `note_deleted`, `viewers`, `tags_changed`, `chats_synced`, `number_status`. Arayüz bu olayları TanStack Query önbelleğine doğrudan yazar (`web/src/features/app/live.ts`, `web/src/api/cache.ts`).
 
 "Şu an bakıyor" listesi (`chats/viewers.ts`) bellekte tutulur. İstemci 20 sn'de bir `POST /api/chats/:id/viewing` gönderir, 45 sn sessiz kalan kayıt 15 sn'lik taramada düşer ve değişiklik `viewers` olayıyla yayılır. Bu bilgi anlıktır ve sunucu yeniden başlayınca sıfırlanır.
 
@@ -245,17 +256,20 @@ Testler `bun test` ile çalışır. Her test `test/helpers.ts` içindeki `setup(
 - Push bildirici bellekte toplanan bir sahteyle değiştirilir. Testler bildirim hedeflerini ve "gönderene gitmez" kuralını denetler.
 - Uygulama gerçek `createApp` ile kurulur. İstekler `app.request()` ile çerez saklayan bir istemciyle gönderilir (HTTP sunucusu açılmaz).
 
-Güncel durum: **5 dosyada 30 test, 299 doğrulama** (`expect`).
+Güncel durum: **6 dosyada 41 test, 397 doğrulama** (`expect`).
 
 | Dosya | Kapsam |
 | --- | --- |
 | `test/api.test.ts` | Giriş (hatalı şifre 401 ve kayda geçmesi, çerezsiz 401, devre dışı hesabın girememesi ve açık oturumunun düşmesi); numara ekleme, eşleştirme, gelen/giden mesaj; tekrar gelen olayın tek kaydı, geç gelen mesajın son mesajı ezmemesi, sayfalama; numara erişimi (yok/okuma/yazma ve `numbers.view_all`); arama, atama, hazır yanıt, rapor |
 | `test/features.test.ts` | Sohbet durumu (kapatma, filtre, müşteri yazınca yeniden açılma); etiketler (yönetim, sohbete takma, filtre, silinince sohbetten kalkma); notlar (ekleme, okuma, silme kuralları, izleme modu); "şu an bakıyor" (liste, olay, ekranına geçenin sayılmaması); cevap süresi ve CSV; gerçek ve test numarasının yan yana çalışması, sahte mesajın yalnızca test numarasına kabulü |
 | `test/rbac.test.ts` | Ekranına geç (hedefin gördüğünü görme ve adına yazma; yalnızca izleme izniyle gönderememe; izinsiz ya da daha yetkili kullanıcıya geçilememesi; izin kalkınca geçişin düşmesi); kullanıcı ve rol yönetimi koruma kuralları (kendi rolünü değiştirememe, son Patron koruması, sistem rolü, kendinden yetkili rol/kullanıcı, kullanıcısı olan rolün silinememesi, 13 izinlik katalog); sürüm 1 veritabanının güncel modele taşınması |
-| `test/security.test.ts` | Ekranına geçmede numara erişiminin gerçek kişiyle sınırlanması (göremediği numarayı görememe, ortak numarada düşük seviye); hesap kapatılınca canlı akışın veri göndermemesi; geçişteyken push açılamaması, bilinmeyen push servisinin reddi; yetki dağıtma sınırı (kendinde olmayan numara erişimini verememe, kendi erişimini değiştirememe); izleme modunda yönetim işlemlerinin kapalı olması; 415, 403 (CSRF), 413; 5 hatalı denemede kilit; şifre değişince diğer oturumların düşmesi; virgüllü CSV hücreleri |
+| `test/security.test.ts` | Ekranına geçmede numara erişiminin gerçek kişiyle sınırlanması (göremediği numarayı görememe, ortak numarada düşük seviye); hesap kapatılınca canlı akışın veri göndermemesi; geçişteyken push açılamaması, bilinmeyen push servisinin reddi; yetki dağıtma sınırı (kendinde olmayan numara erişimini verememe, kendi erişimini değiştirememe); izleme modunda yönetim işlemlerinin kapalı olması; 415, 403 (CSRF), 413; kullanıcı adı + IP ve IP başına giriş sınırı, `TRUST_PROXY` kapalıyken başlığın yok sayılması; numara yönetimi ve kullanıcı yönetiminin numara erişimiyle sınırlanması; etkinlik kaydının numaraya göre süzülmesi; şifre değişince diğer oturumların düşmesi; virgüllü CSV hücreleri |
+| `test/history.test.ts` | Kişi adları (anlamsız profil adında numara, rehber adının önceliği ve sonradan gelmesi); geçmiş eşitlemesi (sohbet başına son 5 mesaj, okunmamış/bildirim/mesaj olayı yok, tek `chats_synced`, tekrar gelen paketin etkisizliği, kapalı sohbetin açılmaması) |
 | `test/baileys.messages.test.ts` | Baileys mesajının metne çevrilmesi (metin, medya etiketleri, teknik türler) ve zaman damgası dönüşümü |
 
 Ek denetimler: `bun run typecheck` (sunucu, betikler, testler) ve `bun run web:typecheck` (arayüz ve service worker).
+
+**Gerçek numarayla doğrulama.** Otomatik testler sağlayıcıyı taklit eder. Baileys katmanı bu yüzden ayrıca gerçek bir numarayla denendi (28 Ekim 2026). Eşleştirme kodu, `messaging-history.set` ile gelen son sohbetler (3 parça, 96 sohbet), `contacts` ile gelen 267 rehber adı, LID kimlikli bir kişinin telefon numarasına eşlenmesi, canlı gelen mesaj ve panelden gönderim beklendiği gibi çalıştı. Bu deneme iki hatayı da ortaya çıkardı ve ikisi düzeltildi. Birincisi, silinen numaranın oturum klasörü aynı kimliği alan yeni numaraya geçiyordu; oturum adına artık rastgele bir ek konuyor. İkincisi, fazla haneli Türkiye numaraları kabul ediliyordu; artık 12 hane şartı var. Sağlayıcı soyutlamasının değeri burada görüldü. Geçmiş eşitlemesi ve kişi adları gerçek numarada doğrulandıktan sonra aynı davranışlar WhatsApp'a ihtiyaç duymayan testlere dönüştürüldü (`test/history.test.ts`).
 
 ## Tasarım ilkeleri
 

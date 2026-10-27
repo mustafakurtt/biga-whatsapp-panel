@@ -82,7 +82,7 @@ export function NumbersAdmin() {
   const remove = async (n: NumberView) => {
     const ok = await confirmDialog({
       title: `"${n.label}" silinsin mi?`,
-      message: `${fmtPhone(n.phone)} numarasının panel bağlantısı kaldırılır; ekip bu numaranın sohbetlerini artık göremez. Telefondaki WhatsApp etkilenmez.`,
+      message: `${fmtPhone(n.phone)} numarasının panel bağlantısı kaldırılır; sohbetleri panelden silinir ve telefondaki "Bağlı cihazlar" listesinden de çıkarılır. Telefondaki mesajlar etkilenmez.`,
       confirmText: "Numarayı sil",
       danger: true,
     });

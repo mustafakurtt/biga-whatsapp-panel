@@ -73,7 +73,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
         body: parsed.data.text,
         providerId,
       });
-      audit(c, deps, "message.send", `${number.label} → ${chat.name}`);
+      audit(c, deps, "message.send", `${number.label} → ${chat.name}`, null, chat.number_id);
       return c.json({ ok: true });
     })
     .post("/:id/read", (c) => {
@@ -93,7 +93,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
       chats.setStatus(chat.id, parsed.data.status);
       const updated = chats.get(chat.id)!;
       publishChat(updated);
-      audit(c, deps, "chat.status", chat.name, parsed.data.status === "closed" ? "kapatıldı" : "açıldı");
+      audit(c, deps, "chat.status", chat.name, parsed.data.status === "closed" ? "kapatıldı" : "açıldı", chat.number_id);
       return c.json({ chat: updated });
     })
     .put("/:id/tags", async (c) => {
@@ -105,7 +105,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
       const updated = chats.get(chat.id)!;
       publishChat(updated);
       const names = tagNames();
-      audit(c, deps, "chat.tags", chat.name, updated.tags.map((id) => names.get(id)).join(", ") || "etiketsiz");
+      audit(c, deps, "chat.tags", chat.name, updated.tags.map((id) => names.get(id)).join(", ") || "etiketsiz", chat.number_id);
       return c.json({ chat: updated });
     })
     .get("/:id/notes", (c) => {
@@ -126,7 +126,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
         body: parsed.data.text,
       });
       deps.hub.publish(chat.number_id, { type: "note", numberId: chat.number_id, chatId: chat.id, note });
-      audit(c, deps, "note.create", chat.name);
+      audit(c, deps, "note.create", chat.name, null, chat.number_id);
       return c.json({ note });
     })
     .delete("/:id/notes/:noteId", (c) => {
@@ -139,7 +139,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
       }
       chats.deleteNote(note.id);
       deps.hub.publish(chat.number_id, { type: "note_deleted", numberId: chat.number_id, chatId: chat.id, noteId: note.id });
-      audit(c, deps, "note.delete", chat.name);
+      audit(c, deps, "note.delete", chat.name, null, chat.number_id);
       return c.json({ ok: true });
     })
     .post("/:id/viewing", (c) => {
@@ -161,7 +161,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
         m.source === "contact" ? chat.name : m.as_user_name ? `${m.sent_by_name} (${m.as_user_name} olarak)` : (m.sent_by_name ?? ""),
         m.body,
       ]);
-      audit(c, deps, "chat.export", `${number.label} → ${chat.name}`);
+      audit(c, deps, "chat.export", `${number.label} → ${chat.name}`, null, chat.number_id);
       const csv = toCsv(["Zaman", "Yön", "Kaynak", "Yazan", "Mesaj"], rows);
       return csvResponse(c, `sohbet-${number.label}-${chat.name}.csv`, csv);
     })
@@ -184,7 +184,7 @@ export const createChatsRoutes = (deps: AppDeps) => {
       chats.assign(chat.id, target);
       const updated = chats.get(chat.id)!;
       publishChat(updated);
-      audit(c, deps, "chat.assign", chat.name, targetName);
+      audit(c, deps, "chat.assign", chat.name, targetName, chat.number_id);
       return c.json({ chat: updated });
     });
 

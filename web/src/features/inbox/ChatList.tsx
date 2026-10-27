@@ -6,7 +6,7 @@ import type { ChatFilter, ChatQuery, ChatRow, NumberView, StatusFilter, Tag } fr
 import { Icon } from "../../components/Icon";
 import { openMenu, type MenuItem } from "../../components/overlays";
 import { Avatar, BlockError, cx, Highlight, IconButton, Pill, StatusPill, TagChip, TestBadge } from "../../components/ui";
-import { chatTitle, fmtListTime, fmtPhone, nf } from "../../lib/format";
+import { chatTitle, fmtListTime, fmtPhone, nf, remoteLabel } from "../../lib/format";
 import { useSession } from "../app/session";
 import { chatPath } from "./current";
 import { NewChatDialog } from "./NewChatDialog";
@@ -184,6 +184,7 @@ function emptyText(q: ChatQuery): string {
 
 function ChatRowItem({ chat: c, active, q, tagById, onOpen }: { chat: ChatRow; active: boolean; q: string; tagById: (id: number) => Tag | null; onOpen: () => void }) {
   const title = chatTitle(c);
+  const phone = fmtPhone(remoteLabel(c.remote_id));
   const unread = c.unread > 0;
   const tags = (c.tags ?? []).map(tagById).filter((t): t is Tag => Boolean(t));
   return (
@@ -193,6 +194,7 @@ function ChatRowItem({ chat: c, active, q, tagById, onOpen }: { chat: ChatRow; a
         <span className="chat-main">
           <span className="chat-line1">
             <span className="chat-name"><Highlight text={title} q={q} /></span>
+            {title !== phone && <span className="chat-phone num">{phone}</span>}
             {c.status === "closed" && (
               <span className="closed-mark" title="Kapalı sohbet"><Icon name="checkCircle" size={13} /><span>Kapalı</span></span>
             )}

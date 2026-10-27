@@ -1,6 +1,7 @@
 // GET /api/audit: etkinlik kaydı (`audit.view`), yeni→eski, sayfa başı 100.
 // GET /api/audit/export: aynı filtrelerle CSV (`audit.view` + `data.export`), en fazla 10.000 kayıt.
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
+import { has, visibleNumberIds } from "../../shared/access";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { csvResponse, formatTs, toCsv } from "../../shared/csv";
 import { badRequest } from "../../shared/http";
@@ -20,11 +21,17 @@ type Entry = {
   action: string;
   target: string;
   detail: string | null;
+  number_id: number | null;
 };
 
-const filters = (query: (k: string) => string | undefined, withBefore: boolean) => {
+// visible: "tüm numaraları gör" izni yoksa görebildiği numaralar; numarasız kayıtlar (yönetim, oturum) herkese açık.
+const filters = (query: (k: string) => string | undefined, withBefore: boolean, visible: number[] | null) => {
   const where: string[] = [];
   const params: (string | number)[] = [];
+  if (visible) {
+    where.push(visible.length ? `(number_id IS NULL OR number_id IN (${visible.map(() => "?").join(",")}))` : "number_id IS NULL");
+    params.push(...visible);
+  }
   const before = query("before");
   const userId = query("userId");
   const action = query("action");
@@ -52,11 +59,16 @@ export const createAuditRoutes = (deps: AppDeps) => {
       .query<Entry, (string | number)[]>(`SELECT * FROM audit_log ${where.sql} ORDER BY id DESC LIMIT ${limit}`)
       .all(...where.params);
 
+  const scope = (c: Context<AppEnv>) => {
+    const user = c.get("user");
+    return has(user, "numbers.view_all") ? null : visibleNumberIds(deps.db, user);
+  };
+
   return new Hono<AppEnv>()
     .use(requirePermission("audit.view"))
-    .get("/", (c) => c.json({ entries: select(filters((k) => c.req.query(k), true), PAGE_SIZE) }))
+    .get("/", (c) => c.json({ entries: select(filters((k) => c.req.query(k), true, scope(c)), PAGE_SIZE) }))
     .get("/export", requirePermission("data.export"), (c) => {
-      const entries = select(filters((k) => c.req.query(k), false), EXPORT_LIMIT);
+      const entries = select(filters((k) => c.req.query(k), false, scope(c)), EXPORT_LIMIT);
       audit(c, deps, "audit.export", `${entries.length} kayıt`);
       const rows = entries.map((e) => [formatTs(e.ts), e.actor_name ?? "", e.as_user_name ?? "", e.action, e.target, e.detail ?? ""]);
       return csvResponse(c, "etkinlik-kaydi.csv", toCsv(["Zaman", "Kim", "Kimin adına", "İşlem", "Hedef", "Ayrıntı"], rows));
