@@ -1,8 +1,11 @@
 // Numara tablosu.
 import type { Database } from "../../db/client";
-import type { NumberRow } from "../../shared/types";
+import type { NumberRow, NumberStatus } from "../../shared/types";
 
 export const createNumbersRepository = (db: Database) => ({
+  all: (): NumberRow[] => db.query<NumberRow, []>("SELECT * FROM numbers ORDER BY label").all(),
+  byPhone: (phone: string): NumberRow | null =>
+    db.query<NumberRow, [string]>("SELECT * FROM numbers WHERE phone = ?").get(phone),
   get: (id: number): NumberRow | null => db.query<NumberRow, [number]>("SELECT * FROM numbers WHERE id = ?").get(id),
   bySession: (session: string): NumberRow | null =>
     db.query<NumberRow, [string]>("SELECT * FROM numbers WHERE session = ?").get(session),
@@ -23,7 +26,7 @@ export const createNumbersRepository = (db: Database) => ({
       db.query("UPDATE numbers SET session = ? WHERE id = ?").run(`n${row.id}`, row.id);
       return db.query<NumberRow, [number]>("SELECT * FROM numbers WHERE id = ?").get(row.id)!;
     })(),
-  setStatus: (id: number, status: string, meId: string | null) =>
+  setStatus: (id: number, status: NumberStatus, meId: string | null) =>
     db.query("UPDATE numbers SET status = ?, me_id = COALESCE(?, me_id) WHERE id = ?").run(status, meId, id),
   remove: (id: number) => db.query("DELETE FROM numbers WHERE id = ?").run(id),
 });

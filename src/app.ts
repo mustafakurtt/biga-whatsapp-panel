@@ -9,8 +9,7 @@ import { createEventsRoutes } from "./modules/events/events.routes";
 import { createNumbersRoutes } from "./modules/numbers/numbers.routes";
 import { createPushRoutes } from "./modules/push/push.routes";
 import { createUsersRoutes } from "./modules/users/users.routes";
-import { createWebhookRoutes } from "./modules/webhook/webhook.routes";
-import type { AppDeps, AppEnv } from "./shared/contracts";
+import { type AppDeps, type AppEnv, ProviderError } from "./shared/contracts";
 import { HttpFailure } from "./shared/http";
 
 export const createApp = (deps: AppDeps) => {
@@ -18,12 +17,12 @@ export const createApp = (deps: AppDeps) => {
 
   app.onError((err, c) => {
     if (err instanceof HttpFailure) return c.json({ error: err.message }, err.status);
+    if (err instanceof ProviderError) return c.json({ error: err.message }, 502);
     deps.logger.error({ err }, "beklenmeyen hata");
     return c.json({ error: "Sunucu hatası" }, 500);
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
-  app.route("/webhooks", createWebhookRoutes(deps));
   app.route("/api/auth", createAuthRoutes(deps));
 
   const api = new Hono<AppEnv>();

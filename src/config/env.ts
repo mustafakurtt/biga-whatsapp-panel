@@ -10,13 +10,10 @@ const schema = z.object({
   DATABASE_PATH: z.string().default("./data/app.db"),
   JWT_SECRET: z.string().min(32, "en az 32 karakter olmalı"),
   COOKIE_SECURE: envBoolean(false),
-  // waha: gerçek WhatsApp (Docker'daki WAHA). mock: WhatsApp'sız deneme.
-  PROVIDER: z.enum(["waha", "mock"]).default("waha"),
-  WAHA_URL: z.string().url().default("http://localhost:3001"),
-  WAHA_API_KEY: z.string().default(""),
-  // WAHA'nın mesajları göndereceği adres (WAHA konteynerinden erişilebilir olmalı).
-  WEBHOOK_URL: z.string().url().default("http://host.docker.internal:3000/webhooks/waha"),
-  WEBHOOK_SECRET: z.string().default(""),
+  // baileys: gerçek WhatsApp (numara sunucuya bağlı cihaz olarak eklenir). mock: WhatsApp'sız deneme.
+  PROVIDER: z.enum(["baileys", "mock"]).default("baileys"),
+  // Her numaranın WhatsApp oturum dosyaları burada (numara başına bir klasör). Gizli tutulmalı.
+  BAILEYS_AUTH_DIR: z.string().default("./data/baileys"),
   VAPID_PUBLIC_KEY: z.string().default(""),
   VAPID_PRIVATE_KEY: z.string().default(""),
   VAPID_SUBJECT: z.string().default("mailto:admin@example.com"),

@@ -9,12 +9,16 @@ export interface SessionUser {
   role: Role;
 }
 
+// WORKING: bağlı. SCAN_QR_CODE: eşleştirme bekliyor. STARTING: bağlanıyor.
+// FAILED: telefondan çıkış yapıldı / yeniden eşleştirme gerekli. STOPPED: kapalı.
+export type NumberStatus = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED";
+
 export interface NumberRow {
   id: number;
   label: string;
   phone: string;
   session: string;
-  status: string;
+  status: NumberStatus;
   me_id: string | null;
   created_at: number;
 }
@@ -45,4 +49,4 @@ export interface MessageRow {
 // Canlı akışla (SSE) ön yüze giden olaylar.
 export type LiveEvent =
   | { type: "message"; numberId: number; chat: ChatRow; message: MessageRow & { sent_by_name: string | null } }
-  | { type: "number_status"; numberId: number; status: string };
+  | { type: "number_status"; numberId: number; status: NumberStatus };

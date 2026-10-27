@@ -1,4 +1,4 @@
-// Telefon numarası biçimleri. WhatsApp kişi kimliği: ülke kodlu rakamlar + "@c.us" (ör. 905551112233@c.us).
+// Telefon numarası biçimleri. WhatsApp kişi kimliği: ülke kodlu rakamlar + "@s.whatsapp.net" (ör. 905551112233@s.whatsapp.net).
 
 // "+90 555 111 22 33", "0555…", "00905…" → "905551112233". Türkiye varsayılır (0 ile başlayan 11 hane).
 export const normalizePhone = (input: string): string => {
@@ -11,9 +11,9 @@ export const normalizePhone = (input: string): string => {
 
 export const isValidPhone = (digits: string): boolean => /^\d{10,15}$/.test(digits);
 
-export const toChatId = (digits: string): string => `${digits}@c.us`;
+export const toChatId = (digits: string): string => `${digits}@s.whatsapp.net`;
 
-// "905551112233@c.us" → "+90 555 111 22 33" benzeri okunur ad (kişi adı yoksa kullanılır).
+// "905551112233@s.whatsapp.net" → "+905551112233" gibi okunur ad (kişi adı yoksa kullanılır).
 export const displayFromRemote = (remoteId: string): string => {
   const [user = remoteId] = remoteId.split("@");
   return /^\d+$/.test(user) ? `+${user}` : user;
