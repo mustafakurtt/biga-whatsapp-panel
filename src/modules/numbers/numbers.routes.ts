@@ -73,7 +73,7 @@ export const createNumbersRoutes = (deps: AppDeps) => {
     .post("/:id/pair", async (c) => {
       requireManager(c.get("user"));
       const number = numberOrFail(idParam(c));
-      if (number.status === "WORKING") throw badRequest("Bu numara zaten bağlı");
+      if (number.status === "WORKING" || number.status === "RESTRICTED") throw badRequest("Bu numara zaten bağlı");
       const code = await deps.provider.requestPairingCode(number.session, number.phone);
       audit(c, deps, "number.pair", number.label);
       return c.json({ code });
@@ -117,6 +117,9 @@ export const createNumbersRoutes = (deps: AppDeps) => {
       const parsed = newChatSchema.safeParse(await readJson(c));
       if (!parsed.success) throw badRequest("Telefon numarası ve mesaj gerekli");
       const remoteId = toChatId(phoneOrFail(parsed.data.phone));
+      if (!chats.findByRemote(number.id, remoteId) && !(await deps.provider.exists(number.session, remoteId))) {
+        throw badRequest("Bu numara WhatsApp kullanmıyor");
+      }
       const { providerId } = await deps.provider.sendText(number.session, remoteId, parsed.data.text);
       const chat = chats.findOrCreate(number.id, remoteId, null, displayFromRemote(remoteId));
       const { actor, asUser } = whoFrom(c);

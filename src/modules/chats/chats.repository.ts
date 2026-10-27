@@ -54,6 +54,11 @@ export const createChatsRepository = (db: Database) => {
         .all(...params);
     },
 
+    findByRemote: (numberId: number, remoteId: string): ChatRow | null =>
+      db
+        .query<ChatRow, [number, string]>(`${CHAT_SELECT} WHERE c.number_id = ? AND c.remote_id = ?`)
+        .get(numberId, remoteId),
+
     // Numara başına okunmamış toplamı.
     unreadByNumber: (): Map<number, number> =>
       new Map(

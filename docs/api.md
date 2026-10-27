@@ -75,7 +75,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | POST | /api/numbers/:id/refresh | `numbers.manage` | — | `{number}` |
 | DELETE | /api/numbers/:id | `numbers.manage` | — | `{ok:true}` |
 | GET | /api/numbers/:id/chats | numarayı gören | `?filter=all\|unread\|mine\|unassigned&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `q`: ad, numara ya da son mesajda arar |
-| POST | /api/numbers/:id/chats | `chats.start` + yazma erişimi | `{phone,text}` | `{chat}` yeni sohbet başlatır ve ilk mesajı gönderir |
+| POST | /api/numbers/:id/chats | `chats.start` + yazma erişimi | `{phone,text}` | `{chat}` yeni sohbet başlatır ve ilk mesajı gönderir (numara WhatsApp kullanmıyorsa 400) |
 | GET | /api/chats/:id | sohbeti gören | — | `{chat}` |
 | GET | /api/chats/:id/messages | sohbeti gören | `?before=<ts>` ops. | `{messages:[Message]}` eski→yeni, en fazla 100 |
 | POST | /api/chats/:id/messages | `messages.send` + yazma erişimi | `{text}` | `{ok:true}` |
@@ -104,6 +104,9 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 
 - `{type:"message", numberId, chat, message}`: `message.source` = `contact` (müşteri), `phone` (telefondan), `panel` (panelden; `sent_by_name` dolu, ekranına geçilmişse `as_user_name` de dolu).
 - `{type:"chat_updated", numberId, chat}`: atama ya da okundu değişikliği.
-- `{type:"number_status", numberId, status}`: `WORKING`, `SCAN_QR_CODE`, `FAILED`, `STOPPED`, `STARTING`.
+- `{type:"number_status", numberId, status}`: `WORKING`, `SCAN_QR_CODE`, `FAILED`, `STOPPED`, `STARTING`, `RESTRICTED`.
+  - `RESTRICTED`: WhatsApp hesabı kısıtladı (hata 463). Numara bağlı ve mesaj almaya devam eder, ama panelden gönderim 24 saat durdurulur; gönderim denemesi 502 döner.
+  - `STOPPED` şu durumlarda da gelir: oturum başka bir yerde açıldı (440) ya da 10 yeniden bağlanma denemesi bitti.
+  - `FAILED` şu durumlarda da gelir: WhatsApp bağlantıyı reddetti (403).
 
 Push bildirimi: `{title, body, url}`; `url` = `/?chat=<chatId>`.

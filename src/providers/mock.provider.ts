@@ -32,6 +32,9 @@ export const createMockProvider = (opts: { onEvent: InboundHandler; connectDelay
     async getStatus(session) {
       return sessions.get(session) ?? { status: "STOPPED", meId: null };
     },
+    async exists() {
+      return true;
+    },
     async sendText() {
       return { providerId: `mock_${crypto.randomUUID()}` };
     },

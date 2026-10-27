@@ -14,6 +14,8 @@ export interface MessagingProvider {
   getQr(session: string): Promise<Uint8Array | null>;
   getStatus(session: string): Promise<{ status: NumberStatus; meId: string | null }>;
   sendText(session: string, chatId: string, text: string): Promise<{ providerId: string | null }>;
+  // Numara WhatsApp'ta kayıtlı mı? (Yeni sohbet öncesi; olmayan numaraya yazmak kısıtlama sebebi.)
+  exists(session: string, chatId: string): Promise<boolean>;
   deleteSession(session: string): Promise<void>;
   stop(): Promise<void>;
 }

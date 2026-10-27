@@ -10,7 +10,9 @@ import makeWASocket, {
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
+  WAMessageStatus,
   type WAMessage,
+  type WAMessageContent,
   type WASocket,
 } from "baileys";
 import type { Logger } from "@mustafakurtt/hono-core/logger";
@@ -29,6 +31,12 @@ const MAX_RETRY_DELAY_MS = 60_000;
 const MIN_SEND_GAP_MS = 3_000;
 const SEND_JITTER_MS = 2_000;
 const TYPING_MS = 800;
+// Bağlantı koparsa en fazla bu kadar yeniden deneme; sonra elle müdahale beklenir (sonsuz döngü bot gibi görünür).
+const MAX_RETRIES = 10;
+// 463 (WhatsApp kısıtlaması) gelince gönderim bu süre boyunca durdurulur.
+const RESTRICTION_PAUSE_MS = 24 * 60 * 60 * 1000;
+// Karşı taraf mesajı çözemezse yeniden gönderebilmek için son gönderilenler bellekte tutulur.
+const SENT_CACHE_SIZE = 500;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -61,6 +69,14 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   const sendQueues = new Map<string, Promise<void>>();
   const lastSentAt = new Map<string, number>();
+  const restrictedUntil = new Map<string, number>();
+  const sentCache = new Map<string, WAMessageContent>();
+
+  const rememberSent = (id: string | null | undefined, content: WAMessageContent | null | undefined) => {
+    if (!id || !content) return;
+    sentCache.set(id, content);
+    if (sentCache.size > SENT_CACHE_SIZE) sentCache.delete(sentCache.keys().next().value!);
+  };
 
   const dirOf = (session: string) => join(env.BAILEYS_AUTH_DIR, session);
   const hasCreds = (session: string) => existsSync(join(dirOf(session), "creds.json"));
@@ -105,9 +121,25 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
     });
   };
 
+  // Kısıtlama süresi dolduysa kaldırır (ve durumu WORKING'e döndürür).
+  const isRestricted = (session: string) => {
+    const until = restrictedUntil.get(session);
+    if (until === undefined) return false;
+    if (until > Date.now()) return true;
+    restrictedUntil.delete(session);
+    if (known.get(session)?.status === "RESTRICTED" && entries.has(session)) setStatus(session, "WORKING");
+    return false;
+  };
+
   const scheduleReconnect = (session: string) => {
     const attempt = (retries.get(session) ?? 0) + 1;
     retries.set(session, attempt);
+    if (attempt > MAX_RETRIES) {
+      logger.error({ session }, "yeniden bağlanma denemeleri bitti; 'Durumu yenile' ya da yeniden eşleştirme gerekli");
+      retries.delete(session);
+      setStatus(session, "STOPPED");
+      return;
+    }
     const delay = Math.min(1000 * 2 ** attempt, MAX_RETRY_DELAY_MS);
     logger.info({ session, attempt, delay }, "yeniden bağlanılacak");
     timers.set(
@@ -131,7 +163,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       syncFullHistory: false,
       // Geçmiş içe aktarılmaz; panel bağlandığı andan itibaren kayıt tutar.
       shouldSyncHistoryMessage: () => false,
-      getMessage: async () => undefined,
+      getMessage: async (key) => (key.id ? sentCache.get(key.id) : undefined),
     });
 
     let markReady!: () => void;
@@ -155,7 +187,8 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       if (update.connection === "open") {
         entry.qr = null;
         retries.delete(session);
-        setStatus(session, "WORKING", sock.user?.id ? jidNormalizedUser(sock.user.id) : null);
+        const meId = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+        setStatus(session, isRestricted(session) ? "RESTRICTED" : "WORKING", meId);
         logger.info({ session }, "WhatsApp bağlandı");
         markReady();
       }
@@ -172,6 +205,18 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
           setStatus(session, "FAILED");
           return;
         }
+        if (code === DisconnectReason.connectionReplaced) {
+          // Aynı oturum başka bir yerde açıldı (ör. ikinci bir sunucu). Yeniden bağlanmak ikisini birbirine düşürür.
+          logger.error({ session }, "oturum başka bir yerde açıldı; yeniden bağlanılmıyor");
+          setStatus(session, "STOPPED");
+          return;
+        }
+        if (code === DisconnectReason.forbidden) {
+          // Hesap ya da cihaz WhatsApp tarafından engellendi: üstüne gitmek durumu kötüleştirir.
+          logger.error({ session }, "WhatsApp bağlantıyı reddetti (403); yeniden bağlanılmıyor");
+          setStatus(session, "FAILED");
+          return;
+        }
         if (code === DisconnectReason.restartRequired) {
           // Eşleştirme kodu girildikten sonra WhatsApp yeniden başlatma ister.
           start(session).catch((err) => logger.error({ err, session }, "yeniden başlatılamadı"));
@@ -184,6 +229,20 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
         }
         setStatus(session, "STARTING");
         scheduleReconnect(session);
+      }
+    });
+
+    // Gönderilen mesaj iletilemezse WhatsApp hata bildirir. 463 = hesap kısıtlandı: gönderimi durdur.
+    sock.ev.on("messages.update", (updates) => {
+      for (const { key, update } of updates) {
+        if (update.status !== WAMessageStatus.ERROR || !key.fromMe) continue;
+        const code = String(update.messageStubParameters?.[0] ?? "");
+        logger.warn({ session, code, id: key.id }, "mesaj iletilemedi");
+        if (code === "463") {
+          restrictedUntil.set(session, Date.now() + RESTRICTION_PAUSE_MS);
+          logger.error({ session }, "WhatsApp hesabı kısıtladı (463); panelden gönderim 24 saat durduruldu");
+          setStatus(session, "RESTRICTED");
+        }
       }
     });
 
@@ -271,6 +330,11 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
 
     async sendText(session, chatId, text) {
       const entry = entries.get(session);
+      if (isRestricted(session)) {
+        throw new ProviderError(
+          "WhatsApp bu numaraya kısıtlama uyguladı; panelden gönderim 24 saat durduruldu. Bu sürede resmi uygulamayı kullanın.",
+        );
+      }
       if (!entry || known.get(session)?.status !== "WORKING") {
         throw new ProviderError("Bu numara WhatsApp'a bağlı değil");
       }
@@ -283,7 +347,9 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
         await sleep(TYPING_MS + Math.min(text.length * 15, 1500));
         await entry.sock.sendPresenceUpdate("paused", chatId).catch(() => {});
         try {
-          return await entry.sock.sendMessage(chatId, { text });
+          const sent = await entry.sock.sendMessage(chatId, { text });
+          rememberSent(sent?.key.id, sent?.message);
+          return sent;
         } finally {
           lastSentAt.set(session, Date.now());
         }
@@ -304,7 +370,15 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       }
     },
 
+    async exists(session, chatId) {
+      const entry = entries.get(session);
+      if (!entry || known.get(session)?.status !== "WORKING") throw new ProviderError("Bu numara WhatsApp'a bağlı değil");
+      const result = await entry.sock.onWhatsApp(chatId).catch(() => undefined);
+      return Boolean(result?.[0]?.exists);
+    },
+
     async deleteSession(session) {
+      restrictedUntil.delete(session);
       const entry = close(session);
       if (entry) {
         entry.closing = true;

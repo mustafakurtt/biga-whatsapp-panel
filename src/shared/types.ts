@@ -17,7 +17,8 @@ export type NumberAccess = "read" | "write";
 
 // WORKING: bağlı. SCAN_QR_CODE: eşleştirme bekliyor. STARTING: bağlanıyor.
 // FAILED: telefondan çıkış yapıldı / yeniden eşleştirme gerekli. STOPPED: kapalı.
-export type NumberStatus = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED";
+// RESTRICTED: WhatsApp kısıtladı (463); bağlı ama panelden gönderim geçici olarak durduruldu.
+export type NumberStatus = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED" | "RESTRICTED";
 
 export interface NumberRow {
   id: number;
