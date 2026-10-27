@@ -27,7 +27,7 @@ import { textOf, timestampMs } from "./baileys.messages";
 
 const READY_TIMEOUT_MS = 20_000;
 const MAX_RETRY_DELAY_MS = 60_000;
-// Ban riskini azaltmak için: aynı numaradan iki gönderim arası en az 3–5 sn, gönderim öncesi kısa "yazıyor…".
+// Doğal gönderim hızı: aynı numaradan iki gönderim arası en az 3–5 sn, gönderim öncesi kısa "yazıyor…".
 const MIN_SEND_GAP_MS = 3_000;
 const SEND_JITTER_MS = 2_000;
 const TYPING_MS = 800;

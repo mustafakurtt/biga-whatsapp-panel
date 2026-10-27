@@ -25,7 +25,6 @@ coverage/
 .gitignore
 .vscode/
 .idea/
-.claude/
 docs/
 *.md
 Dockerfile
