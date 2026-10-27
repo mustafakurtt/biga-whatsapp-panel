@@ -376,7 +376,7 @@ Oturum anahtarları sunucuda `BAILEYS_AUTH_DIR` klasöründe numara başına sak
 
 ### Gerçek numarayla doğrulama
 
-Bağlantı katmanı 28 Ekim 2026'da gerçek bir WhatsApp numarasıyla uçtan uca denendi. Telefondan 8 haneli eşleştirme koduyla bağlanan numara birkaç saniyede **Bağlı** durumuna geçti. İlk eşitlemede 96 bire bir sohbet son mesajlarıyla ve 267 rehber adı panele geldi. Gizli kimlikle (LID) yazan bir kişinin sohbeti doğru telefon numarasıyla eşleşti. Gelen mesaj sayfa yenilenmeden listeye düştü, panelden verilen yanıt da karşı tarafa ulaştı. Grup ve kanal mesajları beklendiği gibi dışarıda kaldı.
+Bağlantı katmanı 28 Ekim 2026'da gerçek bir WhatsApp numarasıyla uçtan uca denendi. Telefondan 8 haneli eşleştirme koduyla bağlanan numara birkaç saniyede **Bağlı** durumuna geçti. İlk eşitlemede 96 bire bir sohbet son mesajlarıyla ve 267 rehber adı panele geldi. Gizli kimlikle (LID) yazan bir kişinin sohbeti doğru telefon numarasıyla eşleşti. Gelen mesaj panele düştü ve panelden yanıt gönderildi. Grup ve kanal mesajları beklendiği gibi dışarıda kaldı.
 
 ---
 
