@@ -1,0 +1,3 @@
+# Gizli ayarlar ve yedekler asla depoya girmesin
+.env
+backups/

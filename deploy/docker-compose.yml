@@ -1,0 +1,65 @@
+# Biga Panel: uygulama + Caddy (otomatik Let's Encrypt HTTPS).
+# Bu klasörden çalıştırın:  cd deploy && docker compose up -d --build
+# Ayrıntılar: docs/deploy.md
+#
+# DİKKAT: "app" servisini ASLA birden fazla kopya çalıştırmayın (scale, ikinci sunucu, aynı anda
+# evde + sunucuda). Aynı WhatsApp oturumu iki yerde açılırsa 440 (connectionReplaced) hatası olur.
+name: biga-panel
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: biga-panel:latest
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    # Konteyner içi yollar sabit; .env'deki değerleri ezer.
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      DATABASE_PATH: /app/data/app.db
+      BAILEYS_AUTH_DIR: /app/data/baileys
+      STATIC_DIR: /app/web/dist
+    volumes:
+      - app-data:/app/data
+    # Dışarıya açılmaz; sadece Caddy erişir.
+    expose:
+      - "3000"
+    # Uygulama SIGTERM'de WhatsApp bağlantılarını ve veritabanını düzgün kapatır.
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2.11.7-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    # Değerler deploy/.env'den okunur (Compose aynı klasördeki .env'i otomatik kullanır).
+    environment:
+      DOMAIN: ${DOMAIN:?deploy/.env içinde DOMAIN tanımlı olmalı}
+      ACME_EMAIL: ${ACME_EMAIL:?deploy/.env içinde ACME_EMAIL tanımlı olmalı}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # sertifikalar burada; silinirse yeniden alınır (Let's Encrypt limitine dikkat)
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app-data: # SQLite veritabanı + WhatsApp oturum anahtarları (ÇOK GİZLİ)
+  caddy-data:
+  caddy-config:

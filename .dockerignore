@@ -1,0 +1,32 @@
+# Gizli bilgiler ve çalışma verisi imaja ASLA girmemeli
+.env
+.env.*
+**/.env
+data/
+**/data/baileys
+*.db
+*.db-wal
+*.db-shm
+
+# İmaj içinde yeniden üretilenler
+node_modules/
+**/node_modules/
+web/dist/
+dist/
+
+# Dağıtım dosyaları (deploy/.env ve yedekler dahil)
+deploy/
+
+# Test, belge, araç dosyaları
+test/
+coverage/
+*.log
+.git/
+.gitignore
+.vscode/
+.idea/
+.claude/
+docs/
+*.md
+Dockerfile
+.dockerignore

@@ -1,0 +1,51 @@
+# Biga Panel ters vekil (reverse proxy). DOMAIN ve ACME_EMAIL deploy/.env'den gelir.
+# Caddy, DNS kaydı bu sunucuyu gösteriyorsa Let's Encrypt sertifikasını kendisi alır ve yeniler.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	# Sıkıştırma: Caddy'nin varsayılan listesi text/* içerir ve text/event-stream'i (SSE) de yakalar.
+	# Canlı akış tamponlanmasın diye türleri tek tek sayıyoruz; text/event-stream listede YOK.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/javascript*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type application/manifest+json*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		# Bilerek dar tutulan CSP: sadece hiçbir şeyi bozmayacak yönergeler.
+		# script-src/style-src eklenmedi: web/index.html'de tema için satır içi <script> var ve
+		# Google Fonts (fonts.googleapis.com / fonts.gstatic.com) kullanılıyor; tam bir CSP bunları
+		# ve ileride eklenecek medya/görsel kaynaklarını kırabilir. Ayrıntı: docs/deploy.md.
+		Content-Security-Policy "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'"
+		-Server
+	}
+
+	reverse_proxy app:3000 {
+		# SSE (/api/events): yanıtı anında ilet, tamponlama yok.
+		flush_interval -1
+		# Caddy yeniden yüklenince açık SSE bağlantılarını hemen koparmasın.
+		stream_close_delay 5m
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

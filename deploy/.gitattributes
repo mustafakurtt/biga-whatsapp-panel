@@ -1,0 +1,5 @@
+# Windows'ta checkout edilse bile betikler LF kalmalı (CRLF ile bash hata verir)
+*.sh text eol=lf
+Caddyfile text eol=lf
+*.yml text eol=lf
+.env* text eol=lf
