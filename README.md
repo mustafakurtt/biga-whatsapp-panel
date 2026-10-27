@@ -167,3 +167,9 @@ Panel, gerçek numaraların yanında **test numaralarını** da destekler. Test 
 | Arayüz | React 19, React Router 7, TanStack Query 5, Vite 8 |
 | PWA | vite-plugin-pwa + Workbox (özel service worker: önbellek, push, bildirim tıklama) |
 | Dağıtım | Docker, Caddy (otomatik HTTPS). Bkz. [docs/deploy.md](docs/deploy.md) |
+
+---
+
+## Lisans
+
+[MIT](LICENSE). WhatsApp bağlantısı gayriresmi bir yöntemle (Baileys) kurulur; kullanım ve olası numara kısıtlamaları kullananın sorumluluğundadır (bkz. [Neden bu yöntem](docs/ozellikler.md#neden-bu-yöntem)).
