@@ -1,13 +1,16 @@
 // Uygulamanın kurulduğu yer: rotalar + statik PWA. Bağımlılıklar index.ts'te kurulur.
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { createAuthRoutes } from "./modules/auth/auth.routes";
+import { createAuditRoutes } from "./modules/audit/audit.routes";
 import { requireUser } from "./modules/auth/auth.middleware";
+import { createAuthRoutes } from "./modules/auth/auth.routes";
 import { createChatsRoutes } from "./modules/chats/chats.routes";
 import { createDevRoutes } from "./modules/dev/dev.routes";
 import { createEventsRoutes } from "./modules/events/events.routes";
 import { createNumbersRoutes } from "./modules/numbers/numbers.routes";
 import { createPushRoutes } from "./modules/push/push.routes";
+import { createQuickRepliesRoutes } from "./modules/quick-replies/quick-replies.routes";
+import { createReportsRoutes } from "./modules/reports/reports.routes";
 import { createUsersRoutes } from "./modules/users/users.routes";
 import { type AppDeps, type AppEnv, ProviderError } from "./shared/contracts";
 import { HttpFailure } from "./shared/http";
@@ -25,14 +28,19 @@ export const createApp = (deps: AppDeps) => {
   app.get("/health", (c) => c.json({ ok: true }));
   app.route("/api/auth", createAuthRoutes(deps));
 
+  const { chatRoutes, searchRoutes } = createChatsRoutes(deps);
   const api = new Hono<AppEnv>();
   api.use(requireUser(deps));
   api.route("/numbers", createNumbersRoutes(deps));
-  api.route("/chats", createChatsRoutes(deps));
-  api.route("/users", createUsersRoutes(deps));
+  api.route("/chats", chatRoutes);
+  api.route("/search", searchRoutes);
+  api.route("/quick-replies", createQuickRepliesRoutes(deps));
+  api.route("/audit", createAuditRoutes(deps));
+  api.route("/reports", createReportsRoutes(deps));
   api.route("/events", createEventsRoutes(deps));
   api.route("/push", createPushRoutes(deps));
   if (deps.env.PROVIDER === "mock") api.route("/dev", createDevRoutes(deps));
+  api.route("/", createUsersRoutes(deps)); // /permissions, /users, /roles
   app.route("/api", api);
 
   app.notFound((c) => (c.req.path.startsWith("/api") ? c.json({ error: "Bulunamadı" }, 404) : c.text("Bulunamadı", 404)));

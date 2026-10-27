@@ -26,7 +26,12 @@ export const createMessageService = (deps: {
 
     const title =
       message.source === "contact" ? `${chat.name} · ${number.label}` : `${number.label} → ${chat.name}`;
-    const who = message.source === "panel" ? (message.sent_by_name ?? "Panel") : "Telefondan";
+    const who =
+      message.source !== "panel"
+        ? "Telefondan"
+        : message.as_user_name
+          ? `${message.sent_by_name ?? "Panel"} (${message.as_user_name} olarak)`
+          : (message.sent_by_name ?? "Panel");
     const body = message.source === "contact" ? preview(message.body) : `${who}: ${preview(message.body)}`;
     notifier
       .notifyNumber(number.id, { title, body, url: `/?chat=${chat.id}` }, message.sent_by ?? undefined)
@@ -36,7 +41,14 @@ export const createMessageService = (deps: {
   const save = (
     number: NumberRow,
     chat: ChatRow,
-    m: { providerId: string | null; source: MessageView["source"]; sentBy: number | null; body: string; ts: number },
+    m: {
+      providerId: string | null;
+      source: MessageView["source"];
+      sentBy: number | null;
+      asUser: number | null;
+      body: string;
+      ts: number;
+    },
   ) => {
     const incoming = m.source === "contact";
     const id = chats.insertMessage({
@@ -45,6 +57,7 @@ export const createMessageService = (deps: {
       direction: incoming ? "in" : "out",
       source: m.source,
       sentBy: m.sentBy,
+      asUser: m.asUser,
       body: m.body,
       ts: m.ts,
     });
@@ -70,14 +83,21 @@ export const createMessageService = (deps: {
         event.source === "contact" ? event.contactName : null,
         displayFromRemote(event.remoteId),
       );
-      save(number, chat, { providerId: event.providerId, source: event.source, sentBy: null, body: event.body, ts: event.ts });
+      save(number, chat, {
+        providerId: event.providerId,
+        source: event.source,
+        sentBy: null,
+        asUser: null,
+        body: event.body,
+        ts: event.ts,
+      });
     },
 
-    async recordPanelSend({ chatId, userId, body, providerId }) {
+    async recordPanelSend({ chatId, userId, asUserId, body, providerId }) {
       const chat = chats.get(chatId);
       const number = chat ? numbers.get(chat.number_id) : null;
       if (!chat || !number) return;
-      save(number, chat, { providerId, source: "panel", sentBy: userId, body, ts: Date.now() });
+      save(number, chat, { providerId, source: "panel", sentBy: userId, asUser: asUserId, body, ts: Date.now() });
     },
   };
 };

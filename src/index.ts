@@ -4,6 +4,7 @@ import { createLogger } from "@mustafakurtt/hono-core/logger";
 import { createApp } from "./app";
 import { readEnv } from "./config/env";
 import { openDatabase } from "./db/client";
+import { createAuditLog } from "./modules/audit/audit.log";
 import { createLiveHub } from "./modules/events/events.hub";
 import { createMessageService } from "./modules/messages/messages.service";
 import { createNumbersRepository } from "./modules/numbers/numbers.repository";
@@ -25,7 +26,7 @@ const onEvent: InboundHandler = (event) => {
 };
 const provider = env.PROVIDER === "mock" ? createMockProvider({ onEvent }) : createBaileysProvider({ env, logger, onEvent });
 
-const app = createApp({ env, db, logger, provider, hub, notifier, messages });
+const app = createApp({ env, db, logger, provider, hub, notifier, messages, audit: createAuditLog(db) });
 // SSE bağlantıları uzun ömürlü; Bun'ın boşta zaman aşımı kapatılır (canlı akış kendi ping'ini gönderir).
 const server = Bun.serve({ hostname: env.HOST, port: env.PORT, fetch: app.fetch, idleTimeout: 0 });
 

@@ -1,13 +1,19 @@
 // Modüller arası ortak tipler (sözleşme). Değiştirmeden önce tüm modüllere etkisi düşünülür.
+import type { Permission } from "./permissions";
 
-export type Role = "patron" | "temsilci" | "salt_okunur";
+export type { Permission };
 
+// Oturumdaki kullanıcı. `permissions` her zaman etkin izinlerdir (ekranına geçilmişse kısıtlanmış hali).
 export interface SessionUser {
   id: number;
   username: string;
   name: string;
-  role: Role;
+  roleId: number;
+  roleName: string;
+  permissions: Permission[];
 }
+
+export type NumberAccess = "read" | "write";
 
 // WORKING: bağlı. SCAN_QR_CODE: eşleştirme bekliyor. STARTING: bağlanıyor.
 // FAILED: telefondan çıkış yapıldı / yeniden eşleştirme gerekli. STOPPED: kapalı.
@@ -31,6 +37,8 @@ export interface ChatRow {
   last_text: string;
   last_message_at: number;
   unread: number;
+  assigned_to: number | null;
+  assigned_name: string | null;
 }
 
 export type MessageSource = "contact" | "phone" | "panel";
@@ -42,11 +50,15 @@ export interface MessageRow {
   direction: "in" | "out";
   source: MessageSource;
   sent_by: number | null;
+  as_user: number | null; // ekranına geçilerek gönderildiyse kimin adına
   body: string;
   ts: number;
 }
 
+export type MessageView = MessageRow & { sent_by_name: string | null; as_user_name: string | null };
+
 // Canlı akışla (SSE) ön yüze giden olaylar.
 export type LiveEvent =
-  | { type: "message"; numberId: number; chat: ChatRow; message: MessageRow & { sent_by_name: string | null } }
+  | { type: "message"; numberId: number; chat: ChatRow; message: MessageView }
+  | { type: "chat_updated"; numberId: number; chat: ChatRow }
   | { type: "number_status"; numberId: number; status: NumberStatus };

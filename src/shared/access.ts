@@ -1,32 +1,68 @@
 // Yetki kuralları tek yerde. Arayüz de kontrol eder ama asıl karar burada (sunucuda) verilir.
-// patron: tüm numaraları görür, yazar, yönetir. temsilci: atandığı numaraları görür ve yazar.
-// salt_okunur: atandığı numaraları sadece görür.
+// Numara erişimi: `numbers.view_all` → tüm numaralar; yoksa user_numbers atamaları.
+// `write` sadece kullanıcıda `messages.send` varsa geçerlidir, yoksa `read` sayılır.
 import type { Database } from "../db/client";
-import type { Role, SessionUser } from "./types";
+import { type Permission, parsePermissions } from "./permissions";
+import type { NumberAccess, SessionUser } from "./types";
 
-export const canWrite = (role: Role): boolean => role === "patron" || role === "temsilci";
-export const canManage = (role: Role): boolean => role === "patron";
+export const has = (user: SessionUser, permission: Permission): boolean => user.permissions.includes(permission);
 
-export const visibleNumberIds = (db: Database, user: SessionUser): number[] => {
-  if (user.role === "patron") {
-    return db.query<{ id: number }, []>("SELECT id FROM numbers").all().map((r) => r.id);
+const effective = (user: SessionUser, assigned: NumberAccess): NumberAccess =>
+  assigned === "write" && has(user, "messages.send") ? "write" : "read";
+
+// Kullanıcının görebildiği numaralar ve erişim seviyesi.
+export const numberAccessMap = (db: Database, user: SessionUser): Map<number, NumberAccess> => {
+  if (has(user, "numbers.view_all")) {
+    const level: NumberAccess = has(user, "messages.send") ? "write" : "read";
+    return new Map(
+      db
+        .query<{ id: number }, []>("SELECT id FROM numbers")
+        .all()
+        .map((r) => [r.id, level]),
+    );
   }
-  return db
-    .query<{ number_id: number }, [number]>("SELECT number_id FROM user_numbers WHERE user_id = ?")
-    .all(user.id)
-    .map((r) => r.number_id);
+  return new Map(
+    db
+      .query<{ number_id: number; access: NumberAccess }, [number]>(
+        "SELECT number_id, access FROM user_numbers WHERE user_id = ?",
+      )
+      .all(user.id)
+      .map((r) => [r.number_id, effective(user, r.access)]),
+  );
+};
+
+export const visibleNumberIds = (db: Database, user: SessionUser): number[] => [...numberAccessMap(db, user).keys()];
+
+// null: göremez.
+export const accessTo = (db: Database, user: SessionUser, numberId: number): NumberAccess | null => {
+  if (has(user, "numbers.view_all")) return has(user, "messages.send") ? "write" : "read";
+  const row = db
+    .query<{ access: NumberAccess }, [number, number]>(
+      "SELECT access FROM user_numbers WHERE user_id = ? AND number_id = ?",
+    )
+    .get(user.id, numberId);
+  return row ? effective(user, row.access) : null;
 };
 
 export const canSeeNumber = (db: Database, user: SessionUser, numberId: number): boolean =>
-  user.role === "patron" ||
-  db.query("SELECT 1 FROM user_numbers WHERE user_id = ? AND number_id = ?").get(user.id, numberId) !== null;
+  accessTo(db, user, numberId) !== null;
 
-// Bir numarayı görebilen kullanıcı kimlikleri (canlı akış ve push hedefleri için).
-export const viewersOfNumber = (db: Database, numberId: number): number[] =>
-  db
-    .query<{ id: number }, [number]>(
-      `SELECT id FROM users WHERE role = 'patron'
-       UNION SELECT user_id AS id FROM user_numbers WHERE number_id = ?`,
+export const canWriteNumber = (db: Database, user: SessionUser, numberId: number): boolean =>
+  accessTo(db, user, numberId) === "write";
+
+// Bir numarayı görebilen aktif kullanıcı kimlikleri (canlı akış ve push hedefleri için).
+export const viewersOfNumber = (db: Database, numberId: number): number[] => {
+  const assigned = new Set(
+    db
+      .query<{ user_id: number }, [number]>("SELECT user_id FROM user_numbers WHERE number_id = ?")
+      .all(numberId)
+      .map((r) => r.user_id),
+  );
+  return db
+    .query<{ id: number; permissions: string }, []>(
+      "SELECT u.id, r.permissions FROM users u JOIN roles r ON r.id = u.role_id WHERE u.active = 1",
     )
-    .all(numberId)
-    .map((r) => r.id);
+    .all()
+    .filter((u) => assigned.has(u.id) || parsePermissions(u.permissions).includes("numbers.view_all"))
+    .map((u) => u.id);
+};

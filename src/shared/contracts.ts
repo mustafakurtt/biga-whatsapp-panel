@@ -41,7 +41,14 @@ export type InboundEvent =
 export interface MessageService {
   handleInbound(event: InboundEvent): Promise<void>;
   // Panelden gönderim: sağlayıcıya gönderilmiş mesajı kaydeder (sent_by ile) ve yayar.
-  recordPanelSend(input: { chatId: number; userId: number; body: string; providerId: string | null }): Promise<void>;
+  // Ekranına geçilerek gönderildiyse `asUserId` = adına gönderilen kullanıcı.
+  recordPanelSend(input: {
+    chatId: number;
+    userId: number;
+    asUserId: number | null;
+    body: string;
+    providerId: string | null;
+  }): Promise<void>;
 }
 
 export interface LiveHub {
@@ -54,6 +61,38 @@ export interface Notifier {
   notifyNumber(numberId: number, payload: { title: string; body: string; url?: string }, exceptUserId?: number): Promise<void>;
 }
 
+export type AuditAction =
+  | "auth.login"
+  | "auth.login_failed"
+  | "auth.logout"
+  | "impersonate.start"
+  | "impersonate.stop"
+  | "message.send"
+  | "chat.start"
+  | "chat.assign"
+  | "number.create"
+  | "number.delete"
+  | "number.pair"
+  | "user.create"
+  | "user.update"
+  | "user.delete"
+  | "role.create"
+  | "role.update"
+  | "role.delete"
+  | "quick_reply.create"
+  | "quick_reply.update"
+  | "quick_reply.delete";
+
+export interface AuditLog {
+  record(entry: {
+    actor: SessionUser | null;
+    asUser?: SessionUser | null;
+    action: AuditAction;
+    target?: string;
+    detail?: string | null;
+  }): void;
+}
+
 export interface AppDeps {
   env: Env;
   db: Database;
@@ -62,7 +101,9 @@ export interface AppDeps {
   hub: LiveHub;
   notifier: Notifier;
   messages: MessageService;
+  audit: AuditLog;
 }
 
-// Hono context değişkenleri: requireUser sonrası `c.get("user")`.
-export type AppEnv = { Variables: { user: SessionUser } };
+// Hono context değişkenleri (requireUser sonrası).
+// user: etkin kullanıcı (ekranına geçilmişse hedef kullanıcı). actor: ekranına geçen gerçek kişi, yoksa null.
+export type AppEnv = { Variables: { user: SessionUser; actor: SessionUser | null } };

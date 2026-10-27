@@ -1,28 +1,83 @@
-// Giriş, çıkış ve "ben kimim".
+// Giriş, çıkış, "ben kimim" ve ekranına geçme.
 import { verifyPassword } from "@mustafakurtt/hono-core/auth";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
-import { HttpFailure, badRequest, readJson } from "../../shared/http";
-import { endSession, findSessionUser, requireUser, startSession } from "./auth.middleware";
+import { HttpFailure, badRequest, forbidden, notFound, readJson } from "../../shared/http";
+import { audit } from "../audit/audit.log";
+import {
+  asImpersonated,
+  canImpersonate,
+  endSession,
+  findSessionUser,
+  requireUser,
+  startSession,
+} from "./auth.middleware";
 
 const loginSchema = z.object({ username: z.string().trim().min(1), password: z.string().min(1) });
+const impersonateSchema = z.object({ userId: z.number().int().positive() });
 
-export const createAuthRoutes = (deps: AppDeps) =>
-  new Hono<AppEnv>()
+export const createAuthRoutes = (deps: AppDeps) => {
+  const { db } = deps;
+
+  return new Hono<AppEnv>()
     .post("/login", async (c) => {
       const parsed = loginSchema.safeParse(await readJson(c));
       if (!parsed.success) throw badRequest("Kullanıcı adı ve şifre gerekli");
-      const row = deps.db
-        .query<{ id: number; password_hash: string }, [string]>("SELECT id, password_hash FROM users WHERE username = ?")
+      const row = db
+        .query<{ id: number; name: string; password_hash: string; active: number }, [string]>(
+          "SELECT id, name, password_hash, active FROM users WHERE username = ?",
+        )
         .get(parsed.data.username);
       const ok = row ? await verifyPassword(parsed.data.password, row.password_hash) : false;
-      if (!row || !ok) throw new HttpFailure(401, "Kullanıcı adı veya şifre hatalı");
+      if (!row || !ok) {
+        deps.audit.record({ actor: null, action: "auth.login_failed", target: parsed.data.username });
+        throw new HttpFailure(401, "Kullanıcı adı veya şifre hatalı");
+      }
+      if (!row.active) throw forbidden("Hesabınız devre dışı. Yöneticinize başvurun.");
+      db.query("UPDATE users SET last_login_at = ? WHERE id = ?").run(Date.now(), row.id);
       await startSession(deps, c, row.id);
-      return c.json({ user: findSessionUser(deps, row.id) });
+      const user = findSessionUser(db, row.id)!;
+      deps.audit.record({ actor: user, action: "auth.login" });
+      return c.json({ user, actor: null });
     })
-    .post("/logout", (c) => {
+    .post("/logout", requireUser(deps), (c) => {
+      audit(c, deps, "auth.logout");
       endSession(c);
       return c.json({ ok: true });
     })
-    .get("/me", requireUser(deps), (c) => c.json({ user: c.get("user") }));
+    .get("/me", requireUser(deps), (c) => c.json({ user: c.get("user"), actor: c.get("actor") }))
+    .get("/impersonate/targets", requireUser(deps), (c) => {
+      const actor = c.get("actor") ?? c.get("user");
+      if (!actor.permissions.includes("impersonate.view")) throw forbidden();
+      const users = db
+        .query<{ id: number }, []>("SELECT id FROM users WHERE active = 1 ORDER BY name")
+        .all()
+        .map((r) => findSessionUser(db, r.id))
+        .filter((u) => u !== null && canImpersonate(actor, u))
+        .map((u) => ({ id: u!.id, username: u!.username, name: u!.name, roleName: u!.roleName }));
+      return c.json({ users });
+    })
+    .post("/impersonate", requireUser(deps), async (c) => {
+      // Zaten birinin ekranındaysa geçişi gerçek kişi adına yapar (iç içe geçiş yok).
+      const actor = c.get("actor") ?? c.get("user");
+      if (!actor.permissions.includes("impersonate.view")) throw forbidden();
+      const parsed = impersonateSchema.safeParse(await readJson(c));
+      if (!parsed.success) throw badRequest("Kullanıcı seçin");
+      const target = findSessionUser(db, parsed.data.userId);
+      if (!target) throw notFound("Kullanıcı bulunamadı ya da devre dışı");
+      if (!canImpersonate(actor, target)) throw forbidden("Bu kullanıcının ekranına geçemezsiniz");
+      await startSession(deps, c, actor.id, target.id);
+      const user = asImpersonated(target, actor);
+      const mode = user.permissions.includes("messages.send") ? "gönderebilir" : "izleme";
+      deps.audit.record({ actor, asUser: target, action: "impersonate.start", target: target.name, detail: mode });
+      return c.json({ user, actor });
+    })
+    .post("/impersonate/stop", requireUser(deps), async (c) => {
+      const actor = c.get("actor");
+      if (!actor) throw badRequest("Şu an kimsenin ekranında değilsiniz");
+      await startSession(deps, c, actor.id);
+      deps.audit.record({ actor, asUser: c.get("user"), action: "impersonate.stop", target: c.get("user").name });
+      return c.json({ user: actor, actor: null });
+    });
+};

@@ -1,7 +1,7 @@
 // Sadece PROVIDER=mock iken: WhatsApp'sız denemek için sahte gelen mesaj.
 import { Hono } from "hono";
 import { z } from "zod";
-import { canManage } from "../../shared/access";
+import { has } from "../../shared/access";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { badRequest, forbidden, notFound, readJson } from "../../shared/http";
 import { isValidPhone, normalizePhone, toChatId } from "../../shared/phone";
@@ -17,7 +17,7 @@ const inboundSchema = z.object({
 export const createDevRoutes = (deps: AppDeps) => {
   const numbers = createNumbersRepository(deps.db);
   return new Hono<AppEnv>().post("/inbound", async (c) => {
-    if (!canManage(c.get("user").role)) throw forbidden();
+    if (!has(c.get("user"), "numbers.manage")) throw forbidden();
     const parsed = inboundSchema.safeParse(await readJson(c));
     if (!parsed.success) throw badRequest("numberId, from ve text gerekli");
     const number = numbers.get(parsed.data.numberId);
