@@ -1,0 +1,27 @@
+{
+  "name": "biga-whatsapp-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "bun --bun tsc --noEmit -p tsconfig.json",
+    "test": "bun test",
+    "user:create": "bun scripts/create-user.ts",
+    "vapid": "bun scripts/vapid.ts"
+  },
+  "dependencies": {
+    "@mustafakurtt/hono-core": "github:mustafakurtt/hono-core#4c533f3c2505dc1d44e32e25e2b02db58a197b67",
+    "hono": "4.13.13",
+    "pino": "10.4.0",
+    "web-push": "3.6.7",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "@types/web-push": "3.6.4",
+    "typescript": "5.9.3"
+  }
+}
