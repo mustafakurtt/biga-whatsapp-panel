@@ -15,7 +15,8 @@ const COOKIE = "session";
 const MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 // uid: gerçek kişi. as: ekranına geçilen kullanıcı. tv: token sürümü (şifre değişince artar, eski oturumlar düşer).
-type Claims = { uid: number; as?: number; tv?: number };
+// jti: oturum kimliği; çıkışta revoked_sessions tablosuna yazılır ve o çerez bir daha kabul edilmez.
+type Claims = { uid: number; as?: number; tv?: number; jti?: string };
 
 const jwtFor = (deps: AppDeps) => createJwt<Claims>({ secret: deps.env.JWT_SECRET, expiresInSeconds: MAX_AGE_SECONDS });
 
@@ -46,10 +47,22 @@ export const asImpersonated = (target: SessionUser, actor: SessionUser): Session
 const tokenVersion = (db: Database, userId: number): number =>
   db.query<{ v: number }, [number]>("SELECT token_version AS v FROM users WHERE id = ?").get(userId)?.v ?? -1;
 
+const isRevoked = (db: Database, jti: string): boolean =>
+  db.query("SELECT 1 FROM revoked_sessions WHERE jti = ?").get(jti) !== null;
+
+// Çıkış: bu oturumun çerezi süresi dolana kadar reddedilir. Süresi dolmuş kayıtlar temizlenir.
+export const revokeSession = (db: Database, claims: Claims & { exp?: number }) => {
+  if (!claims.jti) return;
+  const now = Math.floor(Date.now() / 1000);
+  db.query("DELETE FROM revoked_sessions WHERE exp < ?").run(now);
+  db.query("INSERT OR IGNORE INTO revoked_sessions (jti, exp) VALUES (?, ?)").run(claims.jti, claims.exp ?? now + MAX_AGE_SECONDS);
+};
+
 export type ResolvedSession = { user: SessionUser; actor: SessionUser | null };
 
 // Çerezdeki bilgiyi veritabanına göre çözümler; geçersizse null. Canlı akış bunu her olayda yeniden çağırır.
 export const resolveSession = (db: Database, claims: Claims): ResolvedSession | null => {
+  if (claims.jti && isRevoked(db, claims.jti)) return null;
   const real = findSessionUser(db, claims.uid);
   if (!real || tokenVersion(db, real.id) !== (claims.tv ?? 0)) return null;
   const target = claims.as ? findSessionUser(db, claims.as) : null;
@@ -60,7 +73,8 @@ export const resolveSession = (db: Database, claims: Claims): ResolvedSession | 
 
 export const startSession = async (deps: AppDeps, c: Context, userId: number, asUserId?: number) => {
   const tv = tokenVersion(deps.db, userId);
-  const token = await jwtFor(deps).sign(asUserId ? { uid: userId, as: asUserId, tv } : { uid: userId, tv });
+  const jti = crypto.randomUUID();
+  const token = await jwtFor(deps).sign(asUserId ? { uid: userId, as: asUserId, tv, jti } : { uid: userId, tv, jti });
   setCookie(c, COOKIE, token, {
     httpOnly: true,
     sameSite: "Lax",
@@ -82,6 +96,7 @@ export const requireUser =
     c.set("user", session.user);
     c.set("actor", session.actor);
     c.set("resolve", () => resolveSession(deps.db, claims));
+    c.set("claims", claims);
     await next();
   };
 

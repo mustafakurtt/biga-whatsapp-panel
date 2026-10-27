@@ -312,3 +312,61 @@ describe("etkinlik kaydı numara erişimiyle sınırlı", () => {
     expect(seen.some((e) => e.action === "number.create" && e.target.startsWith("B"))).toBe(false);
   });
 });
+
+describe("rol değiştirerek yetki yükseltme", () => {
+  // Lider B'yi yalnızca okur. veli salt okunur; B'ye "yazma" ataması var ama rolünde gönderme yok (etkin: okuma).
+  const setupLead = async () => {
+    const ctx = await prepare([]);
+    const role = (await ctx.patron("POST", "/api/roles", { name: "Lider", permissions: ["users.manage", "messages.send", "chats.start"] })).json.role;
+    await t.addUser("lead", role.id, [{ numberId: ctx.a, access: "write" }, { numberId: ctx.b, access: "read" }]);
+    const veliId = await t.addUser("veli", ROLE.salt_okunur, [{ numberId: ctx.b, access: "write" }]);
+    return { ...ctx, veliId, lead: await t.login("lead") };
+  };
+
+  test("kullanıcının rolünü değiştirip kendi yazamadığı numarada yazma veremez", async () => {
+    const { lead, veliId } = await setupLead();
+    // veli şu an kapsamda (B'yi o da yalnızca okuyor): yönetilebilir.
+    expect((await lead("PUT", `/api/users/${veliId}`, { name: "Veli Okur" })).status).toBe(200);
+    // Temsilci rolü veliye B'de etkin yazma verirdi: reddedilir; rol değişmez.
+    expect((await lead("PUT", `/api/users/${veliId}`, { roleId: ROLE.temsilci })).status).toBe(403);
+    expect(t.users.get(veliId)!.roleId).toBe(ROLE.salt_okunur);
+  });
+
+  test("rolün izinlerini değiştirerek de veremez", async () => {
+    const { lead, patron } = await setupLead();
+    expect((await lead("PUT", `/api/roles/${ROLE.salt_okunur}`, { permissions: ["messages.send"] })).status).toBe(403);
+    // Tüm numaraları gören Patron yapabilir.
+    expect((await patron("PUT", `/api/roles/${ROLE.salt_okunur}`, { permissions: ["messages.send"] })).status).toBe(200);
+  });
+});
+
+describe("oturum iptali", () => {
+  const rawLogin = async (username: string) => {
+    const res = await t.app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password: PASSWORD }),
+    });
+    return res.headers.get("set-cookie")!.split(";")[0]!;
+  };
+  const meWith = (cookie: string) => t.app.request("/api/auth/me", { headers: { cookie } });
+
+  test("çıkış yapılan oturumun kopyalanmış çerezi artık geçmez; diğer cihaz etkilenmez", async () => {
+    await t.addUser("ali", ROLE.temsilci);
+    const phone = await rawLogin("ali");
+    const laptop = await rawLogin("ali");
+    expect((await meWith(phone)).status).toBe(200);
+    expect((await t.app.request("/api/auth/logout", { method: "POST", headers: { cookie: phone } })).status).toBe(200);
+    expect((await meWith(phone)).status).toBe(401);
+    expect((await meWith(laptop)).status).toBe(200);
+  });
+
+  test("şifre sıfırlanınca kullanıcının bildirim abonelikleri silinir", async () => {
+    await t.addUser("patron", ROLE.patron);
+    const patron = await t.login("patron");
+    const aliId = await t.addUser("ali", ROLE.temsilci);
+    t.db.query("INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?, ?, 'k', 'a')").run("https://fcm.googleapis.com/x", aliId);
+    expect((await patron("PUT", `/api/users/${aliId}`, { password: "yeni-sifre-1" })).status).toBe(200);
+    expect(t.db.query("SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?").get(aliId)).toEqual({ n: 0 });
+  });
+});

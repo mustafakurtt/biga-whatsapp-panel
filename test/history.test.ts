@@ -127,3 +127,21 @@ describe("geçmiş parçalar halinde gelir", () => {
     expect(bodies.at(-1)).toBe(`mesaj ${base + 13_000}`);
   });
 });
+
+describe("iki panel numarası birbirine yazar", () => {
+  test("WhatsApp aynı mesaj kimliğini iki tarafta da verir; mesaj iki sohbete de kaydedilir", async () => {
+    const other = await t.addNumber(patron, "Destek", "905551112244");
+    const otherSession = t.db.query<{ session: string }, [number]>("SELECT session FROM numbers WHERE id = ?").get(other)!.session;
+    // Satış, Destek numarasına yazdı (telefondan): Satış tarafında giden, Destek tarafında gelen; kimlik aynı.
+    const id = "3EB0AYNIKIMLIK";
+    await t.messages.handleInbound({ kind: "message", session, providerId: id, remoteId: "905551112244@s.whatsapp.net", contactName: null, source: "phone", body: "Selam Destek", ts: Date.now() });
+    await t.messages.handleInbound({ kind: "message", session: otherSession, providerId: id, remoteId: "905551112233@s.whatsapp.net", contactName: "Satış", source: "contact", body: "Selam Destek", ts: Date.now() });
+    const inbox = (await patron("GET", `/api/numbers/${other}/chats`)).json.chats as { id: number; unread: number }[];
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]!.unread).toBe(1);
+    expect((await patron("GET", `/api/chats/${inbox[0]!.id}/messages`)).json.messages).toHaveLength(1);
+    // Aynı sohbette tekrar gelen kimlik yine tek kayıt.
+    await t.messages.handleInbound({ kind: "message", session: otherSession, providerId: id, remoteId: "905551112233@s.whatsapp.net", contactName: "Satış", source: "contact", body: "Selam Destek", ts: Date.now() });
+    expect((await patron("GET", `/api/chats/${inbox[0]!.id}/messages`)).json.messages).toHaveLength(1);
+  });
+});

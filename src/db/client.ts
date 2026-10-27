@@ -172,7 +172,36 @@ ALTER TABLE audit_log ADD COLUMN number_id INTEGER;
 CREATE INDEX audit_log_number ON audit_log (number_id, id);
 `;
 
-const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4, V5, V6, V7];
+// Sürüm 8: mesaj kimliği tüm tabloda değil sohbet başına tekil. WhatsApp aynı mesaja gönderen ve alan tarafta
+// aynı kimliği verir; iki panel numarası birbirine yazınca alan taraftaki kayıt atlanıyordu.
+// Ayrıca çıkışta iptal edilen oturumlar (süreleri dolunca temizlenir).
+const V8 = () => `
+CREATE TABLE messages_v8 (
+  id INTEGER PRIMARY KEY,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  provider_id TEXT,
+  direction TEXT NOT NULL CHECK (direction IN ('in','out')),
+  source TEXT NOT NULL CHECK (source IN ('contact','phone','panel')),
+  sent_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  body TEXT NOT NULL,
+  ts INTEGER NOT NULL,
+  as_user INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE (chat_id, provider_id)
+);
+INSERT INTO messages_v8 (id, chat_id, provider_id, direction, source, sent_by, body, ts, as_user)
+  SELECT id, chat_id, provider_id, direction, source, sent_by, body, ts, as_user FROM messages;
+DROP TABLE messages;
+ALTER TABLE messages_v8 RENAME TO messages;
+CREATE INDEX messages_chat_ts ON messages (chat_id, ts);
+CREATE INDEX messages_ts ON messages (ts);
+
+CREATE TABLE revoked_sessions (
+  jti TEXT PRIMARY KEY,
+  exp INTEGER NOT NULL
+);
+`;
+
+const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4, V5, V6, V7, V8];
 
 const migrate = (db: Database) => {
   const current = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;

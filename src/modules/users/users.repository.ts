@@ -93,6 +93,8 @@ export const createUsersRepository = (db: Database) => {
             patch.passwordHash,
             id,
           );
+          // Kayıp ya da ele geçmiş cihaza bildirim gitmesin; kullanıcının açık cihazı bir sonraki açılışta yeniden bağlanır.
+          db.query("DELETE FROM push_subscriptions WHERE user_id = ?").run(id);
         }
         if (patch.numbers) setNumbers(id, patch.numbers);
       })(),

@@ -78,7 +78,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | Yöntem | Yol | İzin | Gövde / sorgu | Yanıt |
 | --- | --- | --- | --- | --- |
 | POST | /api/auth/login | herkes | `{username,password}` | `Me` (devre dışı hesap: 403) |
-| POST | /api/auth/logout | giriş yapmış | — | `{ok:true}` |
+| POST | /api/auth/logout | giriş yapmış | — | `{ok:true}` (oturum sunucuda da iptal edilir; aynı çerez bir daha kabul edilmez) |
 | GET | /api/auth/me | giriş yapmış | — | `Me` |
 | GET | /api/auth/impersonate/targets | `impersonate.view` | — | `{users:[{id,username,name,roleName}]}` (geçilebilecekler) |
 | POST | /api/auth/impersonate | `impersonate.view` | `{userId}` | `Me` |

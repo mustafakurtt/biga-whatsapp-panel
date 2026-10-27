@@ -13,6 +13,7 @@ import {
   endSession,
   findSessionUser,
   requireUser,
+  revokeSession,
   startSession,
 } from "./auth.middleware";
 
@@ -71,6 +72,8 @@ export const createAuthRoutes = (deps: AppDeps) => {
     })
     .post("/logout", requireUser(deps), (c) => {
       audit(c, deps, "auth.logout");
+      // Çerez yalnızca tarayıcıdan silinmez; kopyalanmış olsa bile sunucuda geçersiz olur.
+      revokeSession(db, c.get("claims"));
       endSession(c);
       return c.json({ ok: true });
     })
@@ -95,6 +98,7 @@ export const createAuthRoutes = (deps: AppDeps) => {
       const target = findSessionUser(db, parsed.data.userId);
       if (!target) throw notFound("Kullanıcı bulunamadı ya da devre dışı");
       if (!canImpersonate(actor, target)) throw forbidden("Bu kullanıcının ekranına geçemezsiniz");
+      revokeSession(db, c.get("claims")); // önceki çerez geçersiz olsun
       await startSession(deps, c, actor.id, target.id);
       const user = asImpersonated(target, actor);
       const mode = user.permissions.includes("messages.send") ? "gönderebilir" : "izleme";
@@ -104,6 +108,7 @@ export const createAuthRoutes = (deps: AppDeps) => {
     .post("/impersonate/stop", requireUser(deps), async (c) => {
       const actor = c.get("actor");
       if (!actor) throw badRequest("Şu an kimsenin ekranında değilsiniz");
+      revokeSession(db, c.get("claims"));
       await startSession(deps, c, actor.id);
       deps.audit.record({ actor, asUser: c.get("user"), action: "impersonate.stop", target: c.get("user").name });
       return c.json({ user: actor, actor: null });

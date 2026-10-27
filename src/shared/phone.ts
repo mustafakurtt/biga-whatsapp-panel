@@ -1,11 +1,17 @@
 // Telefon numarası biçimleri. WhatsApp kişi kimliği: ülke kodlu rakamlar + "@s.whatsapp.net" (ör. 905551112233@s.whatsapp.net).
 
-// "+90 555 111 22 33", "0555…", "00905…" → "905551112233". Türkiye varsayılır (0 ile başlayan 11 hane).
+// "+90 555 111 22 33", "0555…", "00905…", "212 555 12 34" → ülke kodlu rakamlar. Türkiye varsayılır:
+// 0 ile başlayan 11 hane ve 2–5 ile başlayan 10 hane. Başka ülke numarası ülke koduyla (+44…) yazılmalı.
 export const normalizePhone = (input: string): string => {
   let digits = input.replace(/\D/g, "");
+  // "+" ya da "00" ile yazıldıysa ülke kodu zaten vardır; Türkiye varsayımı yapılmaz.
+  const international = /^\s*(\+|00)/.test(input);
   if (digits.startsWith("00")) digits = digits.slice(2);
+  if (international) return digits;
   if (digits.length === 11 && digits.startsWith("0")) digits = `90${digits.slice(1)}`;
-  if (digits.length === 10 && digits.startsWith("5")) digits = `90${digits}`;
+  // 0 olmadan yazılmış 10 haneli Türkiye numarası: cep (5xx) ve sabit hat alan kodları (2xx, 3xx, 4xx).
+  // Ör. "212 555 12 34" Fas (+212) değil İstanbul sabit hattıdır.
+  if (digits.length === 10 && /^[2-5]/.test(digits)) digits = `90${digits}`;
   return digits;
 };
 

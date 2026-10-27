@@ -119,8 +119,14 @@ export const createUsersRoutes = (deps: AppDeps) => {
       const self = id === me.id;
       if (self && patch.roleId !== undefined && patch.roleId !== before.roleId) throw badRequest("Kendi rolünüzü değiştiremezsiniz");
       if (self && patch.active === false) throw badRequest("Kendi hesabınızı devre dışı bırakamazsınız");
-      if (patch.roleId !== undefined) assignable(me, roleOrFail(patch.roleId));
+      const nextRole = patch.roleId !== undefined ? roleOrFail(patch.roleId) : null;
+      if (nextRole) assignable(me, nextRole);
       checkGrants(me, patch.numbers, self);
+      // Değişiklik sonrası hali de kapsamda olmalı: rol değiştirip okuma erişimini yazmaya çevirerek
+      // (sonra şifreyi sıfırlayıp o hesaptan) kendi yazamadığı numaraya yazmak mümkün olmasın.
+      if (!self && !coversUser(me, { numbers: patch.numbers ?? before.numbers }, nextRole ?? roleOrFail(before.roleId))) {
+        throw forbidden("Bu değişiklik kullanıcıya sizin sahip olmadığınız bir numara erişimi verir");
+      }
       const losesPatron =
         before.roleId === PATRON_ROLE_ID &&
         ((patch.roleId !== undefined && patch.roleId !== PATRON_ROLE_ID) || patch.active === false);
@@ -168,6 +174,12 @@ export const createUsersRoutes = (deps: AppDeps) => {
         throw badRequest("Bu adda bir rol zaten var");
       }
       const permissions = parsed.data.permissions ? cleanPermissions(me, parsed.data.permissions) : undefined;
+      // Rolün yeni izinleri, rolü taşıyan kullanıcılara yöneticinin sahip olmadığı numara erişimi vermemeli.
+      if (permissions) {
+        const next = { ...role, permissions };
+        const exceeds = repo.list().some((u) => u.roleId === id && u.id !== me.id && !coversUser(me, u, next));
+        if (exceeds) throw forbidden("Bu rolü taşıyan bir kullanıcı, sizin sahip olmadığınız bir numara erişimi kazanırdı");
+      }
       repo.updateRole(id, { name: parsed.data.name, permissions });
       audit(c, deps, "role.update", parsed.data.name ?? role.name, permissions?.join(", ") ?? null);
       return c.json({ role: repo.role(id) });

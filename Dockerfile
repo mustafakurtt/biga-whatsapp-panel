@@ -26,7 +26,9 @@ RUN bun install --frozen-lockfile --production
 FROM oven/bun:${BUN_VERSION}-slim AS runtime
 WORKDIR /app
 
+# TZ: raporlar günleri bu saat dilimine göre böler (kapsayıcının varsayılanı UTC). deploy/.env ile değiştirilebilir.
 ENV NODE_ENV=production \
+    TZ=Europe/Istanbul \
     HOST=0.0.0.0 \
     PORT=3000 \
     STATIC_DIR=/app/web/dist \

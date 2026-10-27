@@ -37,7 +37,7 @@ Patron panelin tüm yetkilerine sahiptir. Rolü değiştirilemez ve sistemde her
 ### Ara sıra
 
 - **Çalışan ayrıldığında:** kullanıcıyı silmek yerine **devre dışı bırakın**. Hesap anında kapanır, geçmişi adıyla kayıtta kalır.
-- **Şifre unutulduğunda ya da bir cihaz kaybolduğunda:** kullanıcıyı düzenleyip yeni şifre girin. Şifre değişince o kullanıcının diğer tüm cihazlardaki oturumları kapanır.
+- **Şifre unutulduğunda ya da bir cihaz kaybolduğunda:** kullanıcıyı düzenleyip yeni şifre girin. Şifre değişince o kullanıcının diğer tüm cihazlardaki oturumları kapanır ve o cihazlara bildirim gitmez.
 - **Yetki dağıtırken:** kimse kendinde olmayan bir izni ya da numara erişimini başkasına veremez. Ekip lideri gibi kullanıcı yöneten bir rol, yalnızca kendi görebildiği numaralara erişim dağıtabilir (rolde `numbers.view_all` yoksa).
 - **Numara "Yeniden eşleştirme gerekli" görünüyorsa:** numara telefondan *Bağlı cihazlar* listesinden çıkarılmıştır. Yeniden eşleştirme kodu alıp bağlayın.
 - **Numara "Kısıtlandı" görünüyorsa:** WhatsApp numaraya geçici kısıtlama bildirmiştir. Gelen mesajlar panele düşmeye devam eder, panelden gönderim 24 saat durur. Bu sürede gerekli yanıtları telefondaki WhatsApp uygulamasından verin. O mesajlar da panelde "Telefondan" olarak görünür.

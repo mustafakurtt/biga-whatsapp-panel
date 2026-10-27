@@ -39,6 +39,10 @@ const MAX_RETRIES = 10;
 const RESTRICTION_PAUSE_MS = 24 * 60 * 60 * 1000;
 // Karşı taraf mesajı çözemezse yeniden gönderebilmek için son gönderilenler bellekte tutulur.
 const SENT_CACHE_SIZE = 500;
+const QUEUE_DROPPED =
+  "Mesaj sırada beklerken numara kısıtlandı ya da bağlantı koptu; gönderilmedi. Numaranın durumunu kontrol edin.";
+// Bağlantı bu kadar süre açık kalırsa "sağlam" sayılır ve yeniden deneme sayacı sıfırlanır.
+const STABLE_CONNECTION_MS = 60_000;
 // Geçmiş parçaları arasında bu kadar sessizlik olunca biriken parçalar işlenir.
 const HISTORY_SETTLE_MS = 4_000;
 
@@ -242,6 +246,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
 
     sock.ev.on("creds.update", saveCreds);
 
+    let stableTimer: ReturnType<typeof setTimeout> | undefined;
     sock.ev.on("connection.update", (update) => {
       if (update.qr) {
         entry.qr = update.qr;
@@ -251,13 +256,17 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       if (update.connection === "connecting" && state.creds.registered) setStatus(session, "STARTING");
       if (update.connection === "open") {
         entry.qr = null;
-        retries.delete(session);
+        // Deneme sayacı ancak bağlantı bir süre ayakta kalınca sıfırlanır. Hemen sıfırlansaydı açılıp
+        // kapanan bir bağlantı sınırsız ve ~2 sn arayla yeniden bağlanırdı.
+        clearTimeout(stableTimer);
+        stableTimer = setTimeout(() => retries.delete(session), STABLE_CONNECTION_MS);
         const meId = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
         setStatus(session, isRestricted(session) ? "RESTRICTED" : "WORKING", meId);
         logger.info({ session }, "WhatsApp bağlandı");
         markReady();
       }
       if (update.connection === "close") {
+        clearTimeout(stableTimer);
         if (entries.get(session) === entry) entries.delete(session);
         failReady(new ProviderError("WhatsApp bağlantısı kapandı, tekrar deneyin"));
         if (entry.closing) return;
@@ -432,8 +441,12 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       const run = previous.then(async () => {
         const wait = (lastSentAt.get(session) ?? 0) + MIN_SEND_GAP_MS + Math.random() * SEND_JITTER_MS - Date.now();
         if (wait > 0) await sleep(wait);
+        // Sırada beklerken numara kısıtlanmış ya da bağlantı değişmiş olabilir: göndermeden önce yeniden bak.
+        const ready = () => !isRestricted(session) && entries.get(session) === entry && known.get(session)?.status === "WORKING";
+        if (!ready()) throw new ProviderError(QUEUE_DROPPED);
         await entry.sock.sendPresenceUpdate("composing", chatId).catch(() => {});
         await sleep(TYPING_MS + Math.min(text.length * 15, 1500));
+        if (!ready()) throw new ProviderError(QUEUE_DROPPED);
         await entry.sock.sendPresenceUpdate("paused", chatId).catch(() => {});
         try {
           const sent = await entry.sock.sendMessage(chatId, { text });
@@ -455,6 +468,7 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
         return { providerId: sent?.key.id ?? null };
       } catch (err) {
         logger.warn({ err, session }, "mesaj gönderilemedi");
+        if (err instanceof ProviderError) throw err; // kuyrukta iptal: açıklayıcı mesaj kullanıcıya gitsin
         throw new ProviderError("Mesaj gönderilemedi");
       }
     },
@@ -468,6 +482,9 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
 
     async deleteSession(session) {
       restrictedUntil.delete(session);
+      // Bağlantı o anda kuruluyorsa önce bitmesi beklenir; yoksa kurulan soket kapatılmadan arka planda kalırdı.
+      const pending = starting.get(session);
+      if (pending) await pending.catch(() => {});
       const entry = close(session);
       if (entry) {
         entry.closing = true;

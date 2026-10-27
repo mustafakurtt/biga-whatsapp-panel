@@ -101,9 +101,9 @@ Oturum adı numaranın kimliğinden ve rastgele bir ekten türetilir (`n2-1a2b3c
 | --- | --- |
 | Soket ayarları | `markOnlineOnConnect: false`, `syncFullHistory: false`, `emitOwnEvents: false`. `shouldSyncHistoryMessage` Baileys varsayılanındadır (FULL hariç tüm eşitleme türleri). Eşitlemeyi tamamen kapatmak Baileys'in ilk LID eşlemelerini almasını engeller, Baileys bunun için açılışta uyarı verir |
 | Geçmiş ve rehber | `messaging-history.set` (yalnızca ilk eşleştirmede gelir) → rehber adları `contacts`, mesajlar `history` olayı olarak. `contacts.upsert` / `contacts.update` → `contacts` olayı. Rehberden yalnızca kayıtlı ad (`name`) alınır |
-| Gönderim sırası | Numara başına Promise zinciri. İki gönderim arası en az 3 sn + 0–2 sn rastgele. Gönderim öncesi `composing` → 800 ms + uzunluğa göre en fazla 1,5 sn → `paused` |
+| Gönderim sırası | Numara başına Promise zinciri. İki gönderim arası en az 3 sn + 0–2 sn rastgele. Gönderim öncesi `composing` → 800 ms + uzunluğa göre en fazla 1,5 sn → `paused`. Sıradaki mesaj göndermeden hemen önce yeniden denetlenir: numara bu arada kısıtlandıysa ya da bağlantı değiştiyse gönderilmez, kullanıcıya açıklayıcı hata döner |
 | Kısıtlama (463) | `messages.update` içinde 463 hata kodu görülünce oturum 24 saat `RESTRICTED` olur ve `sendText` açıklayıcı bir hatayla reddeder. Süre oturum klasörüne (`panel-restricted.json`) yazılır, sunucu yeniden başlasa da sürer. Süre dolunca durum `WORKING`'e döner |
-| Bağlantı kopması | `loggedOut` → oturum klasörü silinir, `FAILED`. `connectionReplaced` (440) → `STOPPED`, yeniden deneme yok. `forbidden` (403) → `FAILED`, yeniden deneme yok. `restartRequired` → hemen yeniden açılır. Diğerleri → üstel geri çekilme (2 sn'den 60 sn'ye), en fazla 10 deneme, sonra `STOPPED` |
+| Bağlantı kopması | `loggedOut` → oturum klasörü silinir, `FAILED`. `connectionReplaced` (440) → `STOPPED`, yeniden deneme yok. `forbidden` (403) → `FAILED`, yeniden deneme yok. `restartRequired` → hemen yeniden açılır. Diğerleri → üstel geri çekilme (2 sn'den 60 sn'ye), en fazla 10 deneme, sonra `STOPPED`. Deneme sayacı bağlantı 60 sn ayakta kalınca sıfırlanır; açılıp hemen kapanan bağlantı sınırsız denenmez. Bağlantı kurulurken numara silinirse kurulumun bitmesi beklenip soket kapatılır |
 | Yeni sohbet | `exists()` → `sock.onWhatsApp()`. Rota, daha önce sohbeti olmayan numaraya göndermeden önce bunu çağırır |
 | Kimlik çözümleme | Gruplar, yayın listeleri ve kanallar atlanır. LID kimlikleri `remoteJidAlt` ya da LID eşlemesiyle telefon numaralı kimliğe çevrilir |
 | Yeniden gönderim | Son 500 giden mesajın içeriği bellekte tutulur (`getMessage`). Karşı taraf şifre çözemezse WhatsApp yeniden isteyebilir |
@@ -132,7 +132,7 @@ Sağlayıcı olayı (InboundEvent)            Panelden gönderim (POST …/messa
         │
         └─ kind=message → chats.findOrCreate → save()
                                    │
-                    messages INSERT OR IGNORE (provider_id UNIQUE: tekrar gelen olay atlanır)
+                    messages INSERT OR IGNORE ((chat_id, provider_id) UNIQUE: tekrar gelen olay atlanır)
                                    │
                     chats.touch: son mesaj (yalnızca daha yeniyse), okunmamış +1 (gelen ise),
                                  kapalı sohbet müşteri yazınca 'open'
@@ -148,7 +148,7 @@ Kaynak alanı: Baileys'te `fromMe` olmayan mesaj `contact`, `fromMe` olan mesaj 
 
 ## Oturum, kimlik ve ekranına geçme
 
-**Oturum çerezi.** Giriş başarılı olunca imzalı bir JWT `session` adlı çereze yazılır: `httpOnly`, `SameSite=Lax`, `Secure` (`COOKIE_SECURE` ile), 7 gün. Talepler (claims) yalnızca `{ uid, tv }` ya da ekranına geçilmişse `{ uid, as, tv }` içerir. İzinler çereze **yazılmaz**. `tv`, oturum açıldığı andaki `users.token_version` değeridir. Şifre değişince bu sayı artar ve o kullanıcının eski çerezleri geçersiz olur. Kendi şifresini değiştiren kullanıcıya yeni sürümle çerez yeniden yazılır, o oturumda kalır.
+**Oturum çerezi.** Giriş başarılı olunca imzalı bir JWT `session` adlı çereze yazılır: `httpOnly`, `SameSite=Lax`, `Secure` (`COOKIE_SECURE` ile), 7 gün. Talepler (claims) yalnızca `{ uid, tv, jti }` ya da ekranına geçilmişse `{ uid, as, tv, jti }` içerir. `jti` oturum kimliğidir: çıkışta ve ekranına geç başlatılıp bitirilince eski çerezin `jti`'si `revoked_sessions` tablosuna yazılır (süresi dolunca silinir), kopyalanmış çerez bir daha kabul edilmez. Şifre sıfırlanınca kullanıcının push abonelikleri de silinir. İzinler çereze **yazılmaz**. `tv`, oturum açıldığı andaki `users.token_version` değeridir. Şifre değişince bu sayı artar ve o kullanıcının eski çerezleri geçersiz olur. Kendi şifresini değiştiren kullanıcıya yeni sürümle çerez yeniden yazılır, o oturumda kalır.
 
 **Giriş.** `POST /api/auth/login` hatalı denemeleri bellekte iki katmanda sayar (`login-limiter.ts`): kullanıcı adı + IP için 5 hatada 5 dakika, IP için 15 dakikada 20 hatada 15 dakika kilit (429). Başarılı giriş yalnızca kullanıcı adı + IP sayacını sıfırlar, IP sayacını sıfırlamaz. İstemci adresi `TRUST_PROXY` açıksa `X-Forwarded-For`'un son değerinden (Caddy'nin eklediği), değilse bağlantıdan okunur. Hatalı deneme kaydında adres de yazar. Var olmayan kullanıcıda da sabit bir sahte hash'e karşı şifre doğrulaması yapılır, yanıt süresi kullanıcının varlığını ele vermez. Kullanıcı adı en fazla 80, şifre en fazla 200 karakter olabilir. Hatalı denemeler etkinlik kaydına 40 karaktere kısaltılmış kullanıcı adıyla yazılır.
 
@@ -207,7 +207,7 @@ SQLite, `bun:sqlite` ile `strict` modda açılır. `journal_mode = WAL`, `busy_t
 | `numbers` | WhatsApp numaraları | `label`, `phone`, `provider` (`baileys`/`mock`), `session` (tekil), `status`, `me_id` |
 | `user_numbers` | Numara erişimi | `(user_id, number_id)` birincil anahtar, `access` (`read`/`write`) |
 | `chats` | Sohbetler | `(number_id, remote_id)` tekil, `name`, `last_text`, `last_message_at`, `unread`, `assigned_to`, `status` (`open`/`closed`) |
-| `messages` | Mesajlar | `provider_id` (tekil, tekrar koruması), `direction`, `source` (`contact`/`phone`/`panel`), `sent_by`, `as_user`, `body`, `ts` |
+| `messages` | Mesajlar | `provider_id` (sohbet başına tekil, tekrar koruması; iki panel numarası birbirine yazınca aynı kimlik iki sohbette de kaydedilir), `direction`, `source` (`contact`/`phone`/`panel`), `sent_by`, `as_user`, `body`, `ts` |
 | `tags` | Etiketler | `name` (tekil, büyük/küçük harf duyarsız), `color` |
 | `chat_tags` | Sohbet–etiket ilişkisi | `(chat_id, tag_id)` |
 | `chat_notes` | Ekip içi notlar | `user_id`, `user_name`, `as_user_name`, `body`, `ts` |
@@ -220,7 +220,7 @@ Silme davranışı yabancı anahtarlarla tanımlıdır. Numara silinince sohbetl
 
 ### Şema sürümleri
 
-Şema sürümü `PRAGMA user_version` ile tutulur. Açılışta eksik adımlar tek bir işlem (transaction) içinde sırayla uygulanır. Tablo yeniden kurulumları için işlem süresince yabancı anahtar denetimi kapatılır, ardından `PRAGMA foreign_key_check` ile bütünlük doğrulanır. Güncel sürüm **7**'dir.
+Şema sürümü `PRAGMA user_version` ile tutulur. Açılışta eksik adımlar tek bir işlem (transaction) içinde sırayla uygulanır. Tablo yeniden kurulumları için işlem süresince yabancı anahtar denetimi kapatılır, ardından `PRAGMA foreign_key_check` ile bütünlük doğrulanır. Güncel sürüm **8**'dir.
 
 | Sürüm | İçerik |
 | --- | --- |
@@ -231,6 +231,7 @@ Silme davranışı yabancı anahtarlarla tanımlıdır. Numara silinince sohbetl
 | 5 | `users.token_version`: şifre değişince o kullanıcının eski oturumları düşer |
 | 6 | `contacts`: numara başına telefon rehberindeki kişi adları |
 | 7 | `audit_log.number_id`: etkinlik kaydı numara erişimine göre süzülür |
+| 8 | `messages` yeniden kurulur: `provider_id` tekilliği sohbet başına (`UNIQUE (chat_id, provider_id)`). `revoked_sessions`: çıkışta iptal edilen oturumlar |
 
 ## Canlı olaylar
 
@@ -256,7 +257,7 @@ Testler `bun test` ile çalışır. Her test `test/helpers.ts` içindeki `setup(
 - Push bildirici bellekte toplanan bir sahteyle değiştirilir. Testler bildirim hedeflerini ve "gönderene gitmez" kuralını denetler.
 - Uygulama gerçek `createApp` ile kurulur. İstekler `app.request()` ile çerez saklayan bir istemciyle gönderilir (HTTP sunucusu açılmaz).
 
-Güncel durum: **6 dosyada 41 test, 397 doğrulama** (`expect`).
+Güncel durum: **6 dosyada 47 test, 433 doğrulama** (`expect`).
 
 | Dosya | Kapsam |
 | --- | --- |
@@ -274,7 +275,7 @@ Ek denetimler: `bun run typecheck` (sunucu, betikler, testler) ve `bun run web:t
 ## Tasarım ilkeleri
 
 - **Yetkinin tek kaynağı sunucudur.** Arayüz, kullanıcının etkin izinlerine bakarak yalnızca uygun düğmeleri gösterir. Her karar yine de sunucuda, her istekte, veritabanındaki güncel rol ve atamalarla verilir.
-- **Çerezde yetki yok.** JWT yalnızca kimlik taşır (`uid`, `as`). İzinler her istekte yüklenir, değişiklikler anında etkili olur ve iptal için ayrı bir oturum listesi gerekmez.
+- **Çerezde yetki yok.** JWT yalnızca kimlik taşır (`uid`, `as`). İzinler her istekte yüklenir, değişiklikler anında etkili olur yalnızca çıkış yapılan oturumlar küçük bir iptal listesinde (`revoked_sessions`) tutulur.
 - **Varlık bilgisi sızmaz.** Görülemeyen numara ya da sohbet için 404 döner. Girişte var olmayan kullanıcı adı da aynı yanıtı alır, yanıt süresi de aynıdır.
 - **Yetki büyümez.** Rol, izin ve numara erişimi yalnızca dağıtanın sahip olduğu ölçüde verilebilir. Ekranına geçmede izinler ve numara erişimi kesişimdir.
 - **Uzun ömürlü bağlantılarda da denetim.** SSE akışı yetkiyi yalnızca açılışta değil, her olayda denetler.

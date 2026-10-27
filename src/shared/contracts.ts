@@ -132,5 +132,7 @@ export type AppEnv = {
     user: SessionUser;
     actor: SessionUser | null;
     resolve: () => { user: SessionUser; actor: SessionUser | null } | null;
+    // Doğrulanmış çerez içeriği (çıkışta oturumu iptal etmek için).
+    claims: { uid: number; as?: number; tv?: number; jti?: string; exp?: number };
   };
 };

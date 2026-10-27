@@ -41,7 +41,7 @@ Panelin merkezi ortak gelen kutusudur. Kullanıcı yetkili olduğu numaraları g
 
 **Sağlamlık.** Aynı mesaj WhatsApp'tan iki kez gelirse bir kez kaydedilir. Geç ulaşan eski bir mesaj sohbetin "son mesaj" bilgisini ezmez. Gizli kimlikle (LID) gelen kişiler mümkün olduğunda telefon numaralarıyla eşlenir, böylece aynı kişinin sohbeti tek kalır.
 
-> **İpucu:** Yeni sohbette numarayı `0555 111 22 33`, `+90 555 111 22 33` ya da `905551112233` biçiminde yazabilirsiniz. Panel ülke kodlu biçime kendisi çevirir (0 ile başlayan 11 haneli numaralar Türkiye numarası kabul edilir).
+> **İpucu:** Yeni sohbette numarayı `0555 111 22 33`, `+90 555 111 22 33` ya da `905551112233` biçiminde yazabilirsiniz. Panel ülke kodlu biçime kendisi çevirir: ülke kodu yazılmamışsa 0 ile başlayan 11 haneli ve 2–5 ile başlayan 10 haneli numaralar Türkiye numarası kabul edilir (`212 555 12 34` İstanbul sabit hattıdır). Yabancı numaraları `+` ile ülke koduyla yazın.
 
 ---
 
@@ -334,7 +334,7 @@ Biga Panel'de güvenlik kararları sunucuda, her istekte verilir. Arayüz yalnı
 | **Giriş kilidi** | Aynı kullanıcı adı ve adresten art arda 5 hatalı denemede 5 dakika, çok sayıda deneme yapan adrese 15 dakika kilit (429). Başka adresten gelen denemeler gerçek kullanıcıyı kilitlemez. Her hatalı deneme adresiyle birlikte etkinlik kaydına geçer | Şifre tahmin denemelerini yavaşlatır ve görünür kılar |
 | **Kullanıcı adı sızdırmama** | Var olmayan kullanıcı adında da şifre doğrulaması yapılır. Yanıt süresi ve mesajı aynıdır ("Kullanıcı adı veya şifre hatalı") | Hangi kullanıcı adlarının var olduğu dışarıdan anlaşılmaz |
 | **Güvenli oturum çerezi** | İmzalı JWT, `httpOnly`, `SameSite=Lax`, HTTPS'te `Secure`. Çerezde yalnızca kimlik vardır, izinler her istekte veritabanından okunur | Rol değişikliği, devre dışı bırakma ve geçiş iptali anında etkili olur |
-| **Şifre değişince oturum düşürme** | Şifresi değişen kullanıcının diğer tüm oturumları geçersiz olur | Ele geçirilmiş ya da unutulmuş açık oturumlar şifre sıfırlamayla kapanır |
+| **Şifre değişince oturum düşürme** | Şifresi değişen kullanıcının diğer tüm oturumları geçersiz olur, bildirim abonelikleri silinir. Çıkış yapılan oturumun çerezi kopyalanmış olsa bile sunucuda geçersizdir | Ele geçirilmiş ya da unutulmuş açık oturumlar şifre sıfırlamayla kapanır |
 | **CSRF koruması** | Durum değiştiren istekler yalnızca panelin kendi sayfasından kabul edilir (`Sec-Fetch-Site` ya da `Origin` denetimi). Gövdeli istekler `application/json` olmak zorundadır (415) | Başka bir siteden, kullanıcının oturumu kullanılarak işlem yapılamaz |
 | **İstek sınırları** | API gövdesi en fazla 1 MB (413). Tüm girdiler şemayla ve uzunluk sınırlarıyla doğrulanır | Aşırı büyük ya da bozuk isteklerle sunucu yorulamaz |
 | **Varlık gizleme** | Görülemeyen numara ve sohbetler için "bulunamadı" (404) döner | Yetkisi olmayan kişi bir kaydın var olup olmadığını öğrenemez |

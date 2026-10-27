@@ -181,7 +181,7 @@ describe("veritabanı geçişi", () => {
       old.close();
 
       const db = openDatabase(path);
-      expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 7 });
+      expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 8 });
       expect(db.query("SELECT id, role_id, active FROM users ORDER BY id").all()).toEqual([
         { id: 1, role_id: 1, active: 1 },
         { id: 2, role_id: 2, active: 1 },
