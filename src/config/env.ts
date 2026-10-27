@@ -16,6 +16,8 @@ const schema = z.object({
   ALLOW_MOCK: z.enum(["true", "false", ""]).default(""),
   // Her numaranın WhatsApp oturum dosyaları burada (numara başına bir klasör). Gizli tutulmalı.
   BAILEYS_AUTH_DIR: z.string().default("./data/baileys"),
+  // Derlenmiş arayüz (bun run web:build çıktısı).
+  STATIC_DIR: z.string().default("./web/dist"),
   VAPID_PUBLIC_KEY: z.string().default(""),
   VAPID_PRIVATE_KEY: z.string().default(""),
   VAPID_SUBJECT: z.string().default("mailto:admin@example.com"),

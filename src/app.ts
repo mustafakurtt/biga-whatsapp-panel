@@ -1,4 +1,4 @@
-// Uygulamanın kurulduğu yer: rotalar + statik PWA. Bağımlılıklar index.ts'te kurulur.
+// Uygulamanın kurulduğu yer: rotalar + derlenmiş arayüz (React PWA, STATIC_DIR). Bağımlılıklar index.ts'te kurulur.
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { createAuditRoutes } from "./modules/audit/audit.routes";
@@ -51,7 +51,17 @@ export const createApp = (deps: AppDeps) => {
   app.route("/api", api);
 
   app.notFound((c) => (c.req.path.startsWith("/api") ? c.json({ error: "Bulunamadı" }, 404) : c.text("Bulunamadı", 404)));
-  app.use("/*", serveStatic({ root: "./public" }));
-  app.get("/*", serveStatic({ path: "./public/index.html" }));
+  const root = deps.env.STATIC_DIR.replace(/\/+$/, "");
+  // Service worker ve index.html önbelleğe alınmasın; yeni sürüm hemen gelsin.
+  app.use("/sw.js", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-cache");
+  });
+  app.use("/*", serveStatic({ root }));
+  // Tek sayfa uygulama: bilinmeyen yollar index.html'e düşer (ör. /admin/users).
+  app.get("/*", async (c, next) => {
+    c.header("Cache-Control", "no-cache");
+    return serveStatic({ path: `${root}/index.html` })(c, next);
+  });
   return app;
 };
