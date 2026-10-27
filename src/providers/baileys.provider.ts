@@ -25,6 +25,12 @@ import { textOf, timestampMs } from "./baileys.messages";
 
 const READY_TIMEOUT_MS = 20_000;
 const MAX_RETRY_DELAY_MS = 60_000;
+// Ban riskini azaltmak için: aynı numaradan iki gönderim arası en az 3–5 sn, gönderim öncesi kısa "yazıyor…".
+const MIN_SEND_GAP_MS = 3_000;
+const SEND_JITTER_MS = 2_000;
+const TYPING_MS = 800;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 interface Entry {
   sock: WASocket;
@@ -53,6 +59,8 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
   const known = new Map<string, { status: NumberStatus; meId: string | null }>();
   const retries = new Map<string, number>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const sendQueues = new Map<string, Promise<void>>();
+  const lastSentAt = new Map<string, number>();
 
   const dirOf = (session: string) => join(env.BAILEYS_AUTH_DIR, session);
   const hasCreds = (session: string) => existsSync(join(dirOf(session), "creds.json"));
@@ -266,8 +274,29 @@ export const createBaileysProvider = (opts: { env: Env; logger: Logger; onEvent:
       if (!entry || known.get(session)?.status !== "WORKING") {
         throw new ProviderError("Bu numara WhatsApp'a bağlı değil");
       }
+      // Gönderimler numara başına sıraya girer: insan hızında, arada bekleme ve kısa "yazıyor…".
+      const previous = sendQueues.get(session) ?? Promise.resolve();
+      const run = previous.then(async () => {
+        const wait = (lastSentAt.get(session) ?? 0) + MIN_SEND_GAP_MS + Math.random() * SEND_JITTER_MS - Date.now();
+        if (wait > 0) await sleep(wait);
+        await entry.sock.sendPresenceUpdate("composing", chatId).catch(() => {});
+        await sleep(TYPING_MS + Math.min(text.length * 15, 1500));
+        await entry.sock.sendPresenceUpdate("paused", chatId).catch(() => {});
+        try {
+          return await entry.sock.sendMessage(chatId, { text });
+        } finally {
+          lastSentAt.set(session, Date.now());
+        }
+      });
+      sendQueues.set(
+        session,
+        run.then(
+          () => {},
+          () => {},
+        ),
+      );
       try {
-        const sent = await entry.sock.sendMessage(chatId, { text });
+        const sent = await run;
         return { providerId: sent?.key.id ?? null };
       } catch (err) {
         logger.warn({ err, session }, "mesaj gönderilemedi");
