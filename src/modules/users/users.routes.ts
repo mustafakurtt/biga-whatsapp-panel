@@ -6,10 +6,11 @@ import { z } from "zod";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { badRequest, forbidden, idParam, notFound, readJson } from "../../shared/http";
 import { PERMISSIONS, type Permission, isPermission, isSubset } from "../../shared/permissions";
+import { accessTo, has } from "../../shared/access";
 import type { SessionUser } from "../../shared/types";
 import { audit } from "../audit/audit.log";
-import { requirePermission } from "../auth/auth.middleware";
-import { type RoleView, createUsersRepository } from "./users.repository";
+import { requirePermission, startSession } from "../auth/auth.middleware";
+import { type NumberGrant, type RoleView, createUsersRepository } from "./users.repository";
 
 const PATRON_ROLE_ID = 1;
 
@@ -54,6 +55,17 @@ export const createUsersRoutes = (deps: AppDeps) => {
     assignable(me, roleOrFail(user.roleId));
     return user;
   };
+  // Tüm numaraları görmeyen yönetici, kendi erişiminden fazlasını kimseye veremez; kendi erişimini de değiştiremez.
+  const checkGrants = (me: SessionUser, grants: NumberGrant[] | undefined, self: boolean) => {
+    if (!grants || has(me, "numbers.view_all")) return;
+    if (self) throw forbidden("Kendi numara erişiminizi değiştiremezsiniz");
+    for (const g of grants) {
+      const mine = accessTo(deps.db, me, g.numberId);
+      if (!mine || (g.access === "write" && mine !== "write")) {
+        throw forbidden("Kendinizde olmayan bir numara erişimini veremezsiniz");
+      }
+    }
+  };
   const cleanPermissions = (me: SessionUser, list: string[]): Permission[] => {
     const permissions = [...new Set(list)].filter(isPermission);
     if (!isSubset(permissions, me.permissions)) throw forbidden("Sahip olmadığınız bir izni veremezsiniz");
@@ -78,6 +90,7 @@ export const createUsersRoutes = (deps: AppDeps) => {
       if (repo.usernameTaken(parsed.data.username)) throw badRequest("Bu kullanıcı adı zaten var");
       const role = roleOrFail(parsed.data.roleId);
       assignable(me, role);
+      checkGrants(me, parsed.data.numbers, false);
       const id = repo.create({ ...parsed.data, passwordHash: await hashPassword(parsed.data.password) });
       audit(c, deps, "user.create", parsed.data.name, role.name);
       return c.json({ user: repo.get(id) });
@@ -93,6 +106,7 @@ export const createUsersRoutes = (deps: AppDeps) => {
       if (self && patch.roleId !== undefined && patch.roleId !== before.roleId) throw badRequest("Kendi rolünüzü değiştiremezsiniz");
       if (self && patch.active === false) throw badRequest("Kendi hesabınızı devre dışı bırakamazsınız");
       if (patch.roleId !== undefined) assignable(me, roleOrFail(patch.roleId));
+      checkGrants(me, patch.numbers, self);
       const losesPatron =
         before.roleId === PATRON_ROLE_ID &&
         ((patch.roleId !== undefined && patch.roleId !== PATRON_ROLE_ID) || patch.active === false);
@@ -100,6 +114,8 @@ export const createUsersRoutes = (deps: AppDeps) => {
 
       const passwordHash = patch.password ? await hashPassword(patch.password) : undefined;
       repo.update(id, { ...patch, passwordHash });
+      // Kendi şifresini değiştiren yönetici bu oturumda kalsın (diğer cihazlar düşer).
+      if (self && passwordHash) await startSession(deps, c, me.id);
       const changed = Object.keys(patch).map((k) => (k === "password" ? "şifre" : k)).join(", ");
       audit(c, deps, "user.update", before.name, changed || null);
       return c.json({ user: repo.get(id) });

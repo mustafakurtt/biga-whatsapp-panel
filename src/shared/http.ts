@@ -16,8 +16,11 @@ export const forbidden = (message = "Bu işlem için yetkiniz yok") => new HttpF
 export const notFound = (message = "Bulunamadı") => new HttpFailure(404, message);
 export const providerFailed = (message = "WhatsApp servisine ulaşılamadı") => new HttpFailure(502, message);
 
-// Gövdeyi JSON olarak okur; bozuksa 400.
+// Gövdeyi JSON olarak okur; JSON değilse 415, bozuksa 400.
+// Content-Type zorunlu: başka sitedeki bir form JSON taklidiyle istek atamasın (CSRF).
 export const readJson = async <T>(c: Context): Promise<T> => {
+  const type = c.req.header("content-type") ?? "";
+  if (!/^application\/json\b/i.test(type)) throw new HttpFailure(415, "İstek gövdesi JSON olmalı");
   try {
     return (await c.req.json()) as T;
   } catch {

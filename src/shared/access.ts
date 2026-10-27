@@ -7,11 +7,33 @@ import type { NumberAccess, SessionUser } from "./types";
 
 export const has = (user: SessionUser, permission: Permission): boolean => user.permissions.includes(permission);
 
+// Ekranına geçilmişken etkin kullanıcı, gerçek kişinin (actor) numara erişimiyle sınırlanır:
+// kimse geçerek kendi göremediği numarayı göremez. Bağ JSON'a girmesin diye WeakMap'te tutulur.
+const actorOf = new WeakMap<SessionUser, SessionUser>();
+export const limitToActor = (user: SessionUser, actor: SessionUser): SessionUser => {
+  actorOf.set(user, actor);
+  return user;
+};
+const lower = (a: NumberAccess, b: NumberAccess): NumberAccess => (a === "write" && b === "write" ? "write" : "read");
+
 const effective = (user: SessionUser, assigned: NumberAccess): NumberAccess =>
   assigned === "write" && has(user, "messages.send") ? "write" : "read";
 
 // Kullanıcının görebildiği numaralar ve erişim seviyesi.
 export const numberAccessMap = (db: Database, user: SessionUser): Map<number, NumberAccess> => {
+  const own = ownAccessMap(db, user);
+  const actor = actorOf.get(user);
+  if (!actor) return own;
+  const limit = ownAccessMap(db, actor);
+  const result = new Map<number, NumberAccess>();
+  for (const [id, access] of own) {
+    const cap = limit.get(id);
+    if (cap) result.set(id, lower(access, cap));
+  }
+  return result;
+};
+
+const ownAccessMap = (db: Database, user: SessionUser): Map<number, NumberAccess> => {
   if (has(user, "numbers.view_all")) {
     const level: NumberAccess = has(user, "messages.send") ? "write" : "read";
     return new Map(
@@ -35,6 +57,14 @@ export const visibleNumberIds = (db: Database, user: SessionUser): number[] => [
 
 // null: göremez.
 export const accessTo = (db: Database, user: SessionUser, numberId: number): NumberAccess | null => {
+  const own = ownAccessTo(db, user, numberId);
+  const actor = actorOf.get(user);
+  if (!own || !actor) return own;
+  const cap = ownAccessTo(db, actor, numberId);
+  return cap ? lower(own, cap) : null;
+};
+
+const ownAccessTo = (db: Database, user: SessionUser, numberId: number): NumberAccess | null => {
   if (has(user, "numbers.view_all")) return has(user, "messages.send") ? "write" : "read";
   const row = db
     .query<{ access: NumberAccess }, [number, number]>(

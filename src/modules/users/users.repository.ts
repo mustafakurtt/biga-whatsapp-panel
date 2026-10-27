@@ -88,7 +88,12 @@ export const createUsersRepository = (db: Database) => {
         if (patch.name !== undefined) db.query("UPDATE users SET name = ? WHERE id = ?").run(patch.name, id);
         if (patch.roleId !== undefined) db.query("UPDATE users SET role_id = ? WHERE id = ?").run(patch.roleId, id);
         if (patch.active !== undefined) db.query("UPDATE users SET active = ? WHERE id = ?").run(patch.active ? 1 : 0, id);
-        if (patch.passwordHash) db.query("UPDATE users SET password_hash = ? WHERE id = ?").run(patch.passwordHash, id);
+        if (patch.passwordHash) {
+          db.query("UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?").run(
+            patch.passwordHash,
+            id,
+          );
+        }
         if (patch.numbers) setNumbers(id, patch.numbers);
       })(),
     remove: (id: number) => db.query("DELETE FROM users WHERE id = ?").run(id),

@@ -54,7 +54,8 @@ export interface MessageService {
 }
 
 export interface LiveHub {
-  subscribe(userId: number, send: (event: LiveEvent) => void): () => void;
+  // allow: her olaydan önce çağrılır (numberId null = numaradan bağımsız olay); false dönerse olay gönderilmez.
+  subscribe(userId: number, send: (event: LiveEvent) => void, allow?: (numberId: number | null) => boolean): () => void;
   publish(numberId: number, event: LiveEvent): void;
   // Numaradan bağımsız olay (ör. etiket listesi değişti): tüm bağlı kullanıcılara.
   broadcast(event: LiveEvent): void;
@@ -119,4 +120,11 @@ export interface AppDeps {
 
 // Hono context değişkenleri (requireUser sonrası).
 // user: etkin kullanıcı (ekranına geçilmişse hedef kullanıcı). actor: ekranına geçen gerçek kişi, yoksa null.
-export type AppEnv = { Variables: { user: SessionUser; actor: SessionUser | null } };
+// resolve: oturumu veritabanına göre yeniden çözümler (uzun ömürlü bağlantılar için); geçersizse null.
+export type AppEnv = {
+  Variables: {
+    user: SessionUser;
+    actor: SessionUser | null;
+    resolve: () => { user: SessionUser; actor: SessionUser | null } | null;
+  };
+};

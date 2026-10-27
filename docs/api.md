@@ -1,7 +1,14 @@
 # API sözleşmesi
 
-Tüm yanıtlar JSON. Hata: `{ "error": "<Türkçe mesaj>" }` ve uygun durum kodu (400, 401, 403, 404, 502).
+Tüm yanıtlar JSON. Hata: `{ "error": "<Türkçe mesaj>" }` ve uygun durum kodu (400, 401, 403, 404, 413, 415, 429, 502).
+
+**İstek kuralları:**
+- Gövdeli istekler `Content-Type: application/json` göndermelidir, yoksa 415 döner.
+- API gövdesi en fazla 1 MB olabilir, fazlası 413 döner.
+- Durum değiştiren istekler (GET/HEAD dışı) yalnızca panelin kendi sayfasından kabul edilir. Tarayıcının `Sec-Fetch-Site` başlığı `same-origin` ya da `none` olmalıdır. Bu başlık yoksa `Origin`, `Host` ile aynı olmalıdır. Aksi halde 403 döner (CSRF koruması).
 Kimlik: `POST /api/auth/login` httpOnly `session` çerezi koyar; sonraki istekler çerezle gelir.
+- Aynı kullanıcı adıyla art arda 5 hatalı giriş 5 dakikalık kilide yol açar (429).
+- Kullanıcının şifresi değişince o kullanıcının diğer tüm oturumları düşer (401). Kendi şifresini değiştiren kişinin çerezi yenilenir, o oturumda kalır.
 WhatsApp tarafı Baileys ile çalışır (her numara sunucuya bağlı cihaz olarak eklenir). WhatsApp hatası 502 döner.
 Görülemeyen numara ya da sohbet için 404 döner (var olduğu bilgisi sızmasın).
 Tüm zamanlar milisaniye (Unix epoch).
@@ -38,8 +45,15 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 - Hedef kullanıcı aktif olmalı, siz olmamalı ve izinleri sizinkilerin alt kümesi olmalı (kimse geçerek yetki kazanamaz).
 - Geçişten sonra tüm API hedef kullanıcının gözünden çalışır: aynı numaralar, aynı erişim.
 - Etkin izinler = hedefin izinleri ∩ sizin izinleriniz; `users.manage` ve `impersonate.*` hiç yoktur.
-- `impersonate.send` yoksa `messages.send`, `chats.start`, `chats.assign` da düşer. Yani sadece izlersiniz; tüm numaralar `read` görünür.
+- **Numara erişimi iki kişinin kesişimidir.** Hedefin göremediği numarayı görmezsiniz. Sizin kendi hesabınızla göremediğiniz numarayı da hedefin ekranından göremezsiniz. Ortak numaralarda erişim ikisinin düşüğüdür; `write` ancak ikisinde de `write` ise geçerlidir.
+- **İzleme modu:** `impersonate.send` yoksa sadece okursunuz. Etkin izinlerden yalnızca `numbers.view_all`, `audit.view` ve `reports.view` kalır. Hiçbir değişiklik (mesaj, not, atama, etiket, numara/etiket/hazır yanıt yönetimi, dışa aktarma) yapılamaz ve tüm numaralar `read` görünür.
+- Ekranına geçmişken push aboneliği açılamaz (403).
+- Canlı akış her olayda oturumu yeniden denetler. Geçiş izni kalkar, hesabınız kapatılır ya da şifreniz değişirse akış veri göndermeyi bırakır ve kapanır.
 - Bu modda gönderilen mesajda `sent_by` = siz, `as_user` = hedef kullanıcı. Etkinlik kaydına da ikisi birlikte yazılır.
+
+**Yetki dağıtma sınırı:**
+- `users.manage` sahibi kendinde olmayan bir izni role ya da kullanıcıya veremez.
+- `numbers.view_all` yoksa kendi erişiminden fazlasını (görmediği numara ya da okuduğu numaraya yazma) kimseye veremez ve kendi numara erişimini değiştiremez (403).
 
 ## Nesneler
 
@@ -75,7 +89,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | DELETE | /api/roles/:id | `users.manage` | — | `{ok:true}` (sistem rolü ya da kullanıcısı varsa 400) |
 | GET | /api/users | `users.manage` | — | `{users:[ManagedUser]}` |
 | POST | /api/users | `users.manage` | `{username,name,password,roleId,active?,numbers?}` | `{user: ManagedUser}` |
-| PUT | /api/users/:id | `users.manage` | `{name?,password?,roleId?,active?,numbers?}` | `{user: ManagedUser}` (kendi hesabınızı devre dışı bırakamaz, Patron rolünüzü kaldıramazsınız) |
+| PUT | /api/users/:id | `users.manage` | `{name?,password?,roleId?,active?,numbers?}` | `{user: ManagedUser}` (kendi rolünüzü ve hesap durumunuzu değiştiremezsiniz; son aktif Patron korunur) |
 | DELETE | /api/users/:id | `users.manage` | — | `{ok:true}` (kendinizi silemezsiniz) |
 | GET | /api/numbers | giriş yapmış | — | `{numbers:[Number]}` (görebildikleri) |
 | POST | /api/numbers | `numbers.manage` | `{label,phone,provider?}` (`provider` verilmezse sunucu varsayılanı; test numaraları kapalıysa `mock` 400) | `{number}` (WhatsApp oturumu da açılır) |
@@ -83,7 +97,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | GET | /api/numbers/:id/qr | `numbers.manage` | — | PNG resim (yedek bağlanma yolu) |
 | POST | /api/numbers/:id/refresh | `numbers.manage` | — | `{number}` |
 | DELETE | /api/numbers/:id | `numbers.manage` | — | `{ok:true}` |
-| GET | /api/numbers/:id/chats | numarayı gören | `?filter=all\|unread\|mine\|unassigned&status=open\|closed&tag=<id>&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `status` verilmezse hepsi gelir. `q`: ad, numara ya da son mesajda arar |
+| GET | /api/numbers/:id/chats | numarayı gören (en fazla 500 sohbet) | `?filter=all\|unread\|mine\|unassigned&status=open\|closed&tag=<id>&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `status` verilmezse hepsi gelir. `q`: ad, numara ya da son mesajda arar |
 | POST | /api/numbers/:id/chats | `chats.start` + yazma erişimi | `{phone,text}` | `{chat}` yeni sohbet başlatır ve ilk mesajı gönderir (numara WhatsApp kullanmıyorsa 400) |
 | GET | /api/chats/:id | sohbeti gören | — | `{chat}` |
 | GET | /api/chats/:id/messages | sohbeti gören | `?before=<ts>` ops. | `{messages:[Message]}` eski→yeni, en fazla 100 |
@@ -111,8 +125,8 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | GET | /api/reports/summary | `reports.view` | `?days=7` (1–90) | `Summary` |
 | GET | /api/events | giriş yapmış | — | SSE akışı; her olay `data: <LiveEvent JSON>` |
 | GET | /api/push/key | giriş yapmış | — | `{publicKey}` (boşsa push kapalı) |
-| POST | /api/push/subscribe | giriş yapmış | PushSubscription JSON | `{ok:true}` |
-| POST | /api/push/unsubscribe | giriş yapmış | `{endpoint}` | `{ok:true}` |
+| POST | /api/push/subscribe | giriş yapmış (ekranına geçmişken 403) | PushSubscription JSON | `{ok:true}` (endpoint bilinen bir tarayıcı push servisinde olmalı: FCM, Mozilla, Apple, Windows) |
+| POST | /api/push/unsubscribe | giriş yapmış | `{endpoint}` | `{ok:true}` (endpoint kimin adına kayıtlı olursa olsun silinir) |
 | GET | /api/config | giriş yapmış | — | `{mockAllowed, defaultProvider, pushEnabled}` |
 | POST | /api/dev/inbound | `numbers.manage`, test numaraları açıkken | `{numberId,from,name,text}` | `{ok:true}` test numarasına sahte gelen mesaj (gerçek numaraya 400) |
 

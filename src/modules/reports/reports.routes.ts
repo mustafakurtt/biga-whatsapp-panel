@@ -80,7 +80,9 @@ export const createReportsRoutes = (deps: AppDeps) =>
           const ms = r.ts - since;
           responses.push(ms);
           if (r.source === "panel" && r.sent_by !== null) {
-            userResponses.set(r.sent_by, [...(userResponses.get(r.sent_by) ?? []), ms]);
+            const list = userResponses.get(r.sent_by) ?? [];
+            list.push(ms);
+            userResponses.set(r.sent_by, list);
           }
           waitingSince.delete(r.chat_id);
         }

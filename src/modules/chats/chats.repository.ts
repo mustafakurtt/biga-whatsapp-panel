@@ -70,7 +70,7 @@ export const createChatsRepository = (db: Database) => {
       }
       return db
         .query<RawChat, (string | number)[]>(
-          `${CHAT_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC, c.id DESC`,
+          `${CHAT_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC, c.id DESC LIMIT 500`,
         )
         .all(...params)
         .map(toChat);
@@ -162,7 +162,7 @@ export const createChatsRepository = (db: Database) => {
 
     // Dışa aktarma için tüm mesajlar (eski→yeni).
     allMessages: (chatId: number): MessageView[] =>
-      db.query<MessageView, [number]>(`${MESSAGE_SELECT} WHERE m.chat_id = ? ORDER BY m.ts, m.id`).all(chatId),
+      db.query<MessageView, [number]>(`${MESSAGE_SELECT} WHERE m.chat_id = ? ORDER BY m.ts, m.id LIMIT 50000`).all(chatId),
 
     // Verilen numaralarda mesaj metninde arama, en yeni 50.
     search: (numberIds: number[], q: string): { message: MessageView; chatId: number }[] => {

@@ -5,7 +5,7 @@ import type { Context } from "hono";
 const cell = (value: unknown): string => {
   let text = value === null || value === undefined ? "" : String(value);
   if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return /[";,\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
 export const toCsv = (header: string[], rows: unknown[][]): string =>

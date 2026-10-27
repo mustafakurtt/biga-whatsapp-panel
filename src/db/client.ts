@@ -150,7 +150,12 @@ const V4 = () => `
 ALTER TABLE numbers ADD COLUMN provider TEXT NOT NULL DEFAULT 'baileys' CHECK (provider IN ('baileys','mock'));
 `;
 
-const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4];
+// Sürüm 5: token sürümü (şifre değişince eski oturumlar geçersiz olur).
+const V5 = () => `
+ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0;
+`;
+
+const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4, V5];
 
 const migrate = (db: Database) => {
   const current = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;

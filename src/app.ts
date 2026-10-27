@@ -1,5 +1,6 @@
 // Uygulamanın kurulduğu yer: rotalar + derlenmiş arayüz (React PWA, STATIC_DIR). Bağımlılıklar index.ts'te kurulur.
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { serveStatic } from "hono/bun";
 import { createAuditRoutes } from "./modules/audit/audit.routes";
 import { requireUser } from "./modules/auth/auth.middleware";
@@ -28,6 +29,19 @@ export const createApp = (deps: AppDeps) => {
   });
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  // API: gövde en fazla 1 MB; durum değiştiren istekler sadece panelin kendi sayfasından (CSRF koruması).
+  app.use("/api/*", bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: "İstek çok büyük" }, 413) }));
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      const site = c.req.header("sec-fetch-site");
+      const origin = c.req.header("origin");
+      const host = c.req.header("x-forwarded-host") ?? c.req.header("host");
+      const crossSite = site ? site !== "same-origin" && site !== "none" : Boolean(origin && host && new URL(origin).host !== host);
+      if (crossSite) throw new HttpFailure(403, "Bu istek panelin dışından geldi");
+    }
+    await next();
+  });
   app.route("/api/auth", createAuthRoutes(deps));
 
   const { chatRoutes, searchRoutes } = createChatsRoutes(deps);

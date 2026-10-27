@@ -1,5 +1,5 @@
 // Giriş, çıkış, "ben kimim" ve ekranına geçme.
-import { verifyPassword } from "@mustafakurtt/hono-core/auth";
+import { hashPassword, verifyPassword } from "@mustafakurtt/hono-core/auth";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
@@ -14,26 +14,43 @@ import {
   startSession,
 } from "./auth.middleware";
 
-const loginSchema = z.object({ username: z.string().trim().min(1), password: z.string().min(1) });
+const loginSchema = z.object({ username: z.string().trim().min(1).max(80), password: z.string().min(1).max(200) });
+
+// Kullanıcı adı başına: art arda 5 hatalı denemede 5 dakika kilit.
+const MAX_FAILURES = 5;
+const LOCK_MS = 5 * 60 * 1000;
 const impersonateSchema = z.object({ userId: z.number().int().positive() });
 
 export const createAuthRoutes = (deps: AppDeps) => {
   const { db } = deps;
+  const failures = new Map<string, { count: number; until: number }>();
+  // Var olmayan kullanıcıda da şifre doğrulaması yapılır: yanıt süresi kullanıcının varlığını ele vermesin.
+  const dummyHash = hashPassword("biga-panel-yok-kullanici");
 
   return new Hono<AppEnv>()
     .post("/login", async (c) => {
       const parsed = loginSchema.safeParse(await readJson(c));
       if (!parsed.success) throw badRequest("Kullanıcı adı ve şifre gerekli");
+      const key = parsed.data.username.toLowerCase();
+      const lock = failures.get(key);
+      if (lock && lock.until > Date.now()) {
+        throw new HttpFailure(429, "Çok fazla hatalı deneme. 5 dakika sonra tekrar deneyin.");
+      }
       const row = db
         .query<{ id: number; name: string; password_hash: string; active: number }, [string]>(
           "SELECT id, name, password_hash, active FROM users WHERE username = ?",
         )
         .get(parsed.data.username);
-      const ok = row ? await verifyPassword(parsed.data.password, row.password_hash) : false;
+      const ok = await verifyPassword(parsed.data.password, row?.password_hash ?? (await dummyHash));
       if (!row || !ok) {
-        deps.audit.record({ actor: null, action: "auth.login_failed", target: parsed.data.username });
+        // Süresi dolmuş kilit sayacı sıfırlar; yoksa denemeler birikir.
+        const expired = lock !== undefined && lock.until > 0 && lock.until <= Date.now();
+        const count = (lock && !expired ? lock.count : 0) + 1;
+        failures.set(key, { count, until: count >= MAX_FAILURES ? Date.now() + LOCK_MS : 0 });
+        deps.audit.record({ actor: null, action: "auth.login_failed", target: parsed.data.username.slice(0, 40) });
         throw new HttpFailure(401, "Kullanıcı adı veya şifre hatalı");
       }
+      failures.delete(key);
       if (!row.active) throw forbidden("Hesabınız devre dışı. Yöneticinize başvurun.");
       db.query("UPDATE users SET last_login_at = ? WHERE id = ?").run(Date.now(), row.id);
       await startSession(deps, c, row.id);

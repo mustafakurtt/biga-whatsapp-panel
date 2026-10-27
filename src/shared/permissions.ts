@@ -24,8 +24,8 @@ const KNOWN = new Set<string>(ALL_PERMISSIONS);
 
 // Ekranına geçilmişken hiç verilmeyen izinler (yönetim ve iç içe geçiş).
 const NEVER_WHEN_IMPERSONATING: Permission[] = ["users.manage", "impersonate.view", "impersonate.send"];
-// `impersonate.send` yoksa düşen izinler (sadece izleme).
-const WRITE_PERMISSIONS: Permission[] = ["messages.send", "chats.start", "chats.assign"];
+// `impersonate.send` yoksa (izleme modu) sadece bunlar kalır: hiçbir değişiklik yapılamaz.
+const WATCH_ONLY_KEEP = new Set<Permission>(["numbers.view_all", "audit.view", "reports.view"]);
 
 // Veritabanındaki JSON'u izin listesine çevirir; "*" hepsine açılır, bilinmeyenler atılır.
 export const parsePermissions = (json: string): Permission[] => {
@@ -51,7 +51,8 @@ export const isSubset = (a: Permission[], b: Permission[]): boolean => {
 // Ekranına geçilmişken etkin izinler.
 export const impersonatedPermissions = (target: Permission[], actor: Permission[]): Permission[] => {
   const actorSet = new Set(actor);
-  const dropped = new Set<Permission>(NEVER_WHEN_IMPERSONATING);
-  if (!actorSet.has("impersonate.send")) for (const p of WRITE_PERMISSIONS) dropped.add(p);
-  return target.filter((p) => actorSet.has(p) && !dropped.has(p));
+  const watchOnly = !actorSet.has("impersonate.send");
+  return target.filter(
+    (p) => actorSet.has(p) && !NEVER_WHEN_IMPERSONATING.includes(p) && (!watchOnly || WATCH_ONLY_KEEP.has(p)),
+  );
 };
