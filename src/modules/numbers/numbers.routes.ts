@@ -108,7 +108,12 @@ export const createNumbersRoutes = (deps: AppDeps) => {
       const filter = (c.req.query("filter") ?? "all") as ChatFilter;
       if (!FILTERS.has(filter)) throw badRequest("Geçersiz filtre");
       const q = c.req.query("q")?.trim().slice(0, 100) || undefined;
-      return c.json({ chats: chats.listByNumber(number.id, { filter, q, userId: user.id }) });
+      const status = c.req.query("status");
+      if (status !== undefined && status !== "open" && status !== "closed") throw badRequest("Geçersiz durum");
+      const tag = c.req.query("tag");
+      const tagId = tag === undefined ? undefined : Number(tag);
+      if (tagId !== undefined && !(Number.isInteger(tagId) && tagId > 0)) throw badRequest("Geçersiz etiket");
+      return c.json({ chats: chats.listByNumber(number.id, { filter, q, userId: user.id, status, tagId }) });
     })
     .post("/:id/chats", async (c) => {
       const user = c.get("user");

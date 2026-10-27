@@ -1,13 +1,22 @@
 // Sohbet ve mesaj tabloları.
 import type { Database } from "../../db/client";
-import type { ChatRow, MessageSource, MessageView } from "../../shared/types";
+import type { ChatRow, ChatStatus, MessageSource, MessageView, Note } from "../../shared/types";
 
 export type { MessageView };
 
 const PAGE_SIZE = 100;
 const SEARCH_LIMIT = 50;
 
-const CHAT_SELECT = "SELECT c.*, a.name AS assigned_name FROM chats c LEFT JOIN users a ON a.id = c.assigned_to";
+const CHAT_SELECT = `SELECT c.*, a.name AS assigned_name,
+  (SELECT group_concat(t.tag_id) FROM chat_tags t WHERE t.chat_id = c.id) AS tag_list
+  FROM chats c LEFT JOIN users a ON a.id = c.assigned_to`;
+
+type RawChat = Omit<ChatRow, "tags"> & { tag_list: string | null };
+const toChat = ({ tag_list, ...rest }: RawChat): ChatRow => ({
+  ...rest,
+  tags: tag_list ? tag_list.split(",").map(Number).sort((a, b) => a - b) : [],
+});
+const toChatOrNull = (row: RawChat | null) => (row ? toChat(row) : null);
 const MESSAGE_SELECT = `SELECT m.*, u.name AS sent_by_name, v.name AS as_user_name FROM messages m
   LEFT JOIN users u ON u.id = m.sent_by LEFT JOIN users v ON v.id = m.as_user`;
 
@@ -28,12 +37,16 @@ type NewMessage = {
 const likePattern = (q: string) => `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
 
 export const createChatsRepository = (db: Database) => {
-  const get = (id: number): ChatRow | null => db.query<ChatRow, [number]>(`${CHAT_SELECT} WHERE c.id = ?`).get(id);
+  const get = (id: number): ChatRow | null =>
+    toChatOrNull(db.query<RawChat, [number]>(`${CHAT_SELECT} WHERE c.id = ?`).get(id));
 
   return {
     get,
 
-    listByNumber: (numberId: number, opts: { filter?: ChatFilter; q?: string; userId?: number } = {}): ChatRow[] => {
+    listByNumber: (
+      numberId: number,
+      opts: { filter?: ChatFilter; q?: string; userId?: number; status?: ChatStatus; tagId?: number } = {},
+    ): ChatRow[] => {
       const where = ["c.number_id = ?"];
       const params: (string | number)[] = [numberId];
       if (opts.filter === "unread") where.push("c.unread > 0");
@@ -42,22 +55,31 @@ export const createChatsRepository = (db: Database) => {
         where.push("c.assigned_to = ?");
         params.push(opts.userId ?? 0);
       }
+      if (opts.status) {
+        where.push("c.status = ?");
+        params.push(opts.status);
+      }
+      if (opts.tagId) {
+        where.push("EXISTS (SELECT 1 FROM chat_tags t WHERE t.chat_id = c.id AND t.tag_id = ?)");
+        params.push(opts.tagId);
+      }
       if (opts.q) {
         where.push("(c.name LIKE ? ESCAPE '\\' OR c.remote_id LIKE ? ESCAPE '\\' OR c.last_text LIKE ? ESCAPE '\\')");
         const p = likePattern(opts.q);
         params.push(p, p, p);
       }
       return db
-        .query<ChatRow, (string | number)[]>(
+        .query<RawChat, (string | number)[]>(
           `${CHAT_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.last_message_at DESC, c.id DESC`,
         )
-        .all(...params);
+        .all(...params)
+        .map(toChat);
     },
 
     findByRemote: (numberId: number, remoteId: string): ChatRow | null =>
-      db
-        .query<ChatRow, [number, string]>(`${CHAT_SELECT} WHERE c.number_id = ? AND c.remote_id = ?`)
-        .get(numberId, remoteId),
+      toChatOrNull(
+        db.query<RawChat, [number, string]>(`${CHAT_SELECT} WHERE c.number_id = ? AND c.remote_id = ?`).get(numberId, remoteId),
+      ),
 
     // Numara başına okunmamış toplamı.
     unreadByNumber: (): Map<number, number> =>
@@ -91,12 +113,14 @@ export const createChatsRepository = (db: Database) => {
         .get(m.chatId, m.providerId, m.direction, m.source, m.sentBy, m.asUser, m.body, m.ts)?.id ?? null,
 
     // Son mesaj bilgisini ve okunmamış sayısını günceller (geç gelen eski mesaj son mesajı ezmez).
+    // Müşteri kapalı sohbete yazarsa sohbet yeniden açılır.
     touch: (chatId: number, body: string, ts: number, incoming: boolean): ChatRow => {
       db.query(
         `UPDATE chats SET
            last_text = CASE WHEN ?1 >= last_message_at THEN ?2 ELSE last_text END,
            last_message_at = MAX(last_message_at, ?1),
-           unread = unread + ?3
+           unread = unread + ?3,
+           status = CASE WHEN ?3 = 1 THEN 'open' ELSE status END
          WHERE id = ?4`,
       ).run(ts, body, incoming ? 1 : 0, chatId);
       return get(chatId)!;
@@ -105,6 +129,25 @@ export const createChatsRepository = (db: Database) => {
     markRead: (chatId: number) => db.query("UPDATE chats SET unread = 0 WHERE id = ?").run(chatId),
     assign: (chatId: number, userId: number | null) =>
       db.query("UPDATE chats SET assigned_to = ? WHERE id = ?").run(userId, chatId),
+    setStatus: (chatId: number, status: ChatStatus) => db.query("UPDATE chats SET status = ? WHERE id = ?").run(status, chatId),
+    // Var olmayan etiket kimlikleri yok sayılır.
+    setTags: (chatId: number, tagIds: number[]) =>
+      db.transaction(() => {
+        db.query("DELETE FROM chat_tags WHERE chat_id = ?").run(chatId);
+        const insert = db.query("INSERT OR IGNORE INTO chat_tags (chat_id, tag_id) SELECT ?, id FROM tags WHERE id = ?");
+        for (const id of new Set(tagIds)) insert.run(chatId, id);
+      })(),
+
+    notes: (chatId: number): Note[] =>
+      db.query<Note, [number]>("SELECT * FROM chat_notes WHERE chat_id = ? ORDER BY ts, id").all(chatId),
+    note: (id: number): Note | null => db.query<Note, [number]>("SELECT * FROM chat_notes WHERE id = ?").get(id),
+    addNote: (n: { chatId: number; userId: number; userName: string; asUserName: string | null; body: string }): Note =>
+      db
+        .query<Note, [number, number, string, string | null, string, number]>(
+          `INSERT INTO chat_notes (chat_id, user_id, user_name, as_user_name, body, ts) VALUES (?, ?, ?, ?, ?, ?) RETURNING *`,
+        )
+        .get(n.chatId, n.userId, n.userName, n.asUserName, n.body, Date.now())!,
+    deleteNote: (id: number) => db.query("DELETE FROM chat_notes WHERE id = ?").run(id),
 
     message: (id: number): MessageView | null => db.query<MessageView, [number]>(`${MESSAGE_SELECT} WHERE m.id = ?`).get(id),
 
@@ -116,6 +159,10 @@ export const createChatsRepository = (db: Database) => {
         )
         .all(chatId, before ?? Number.MAX_SAFE_INTEGER, PAGE_SIZE)
         .reverse(),
+
+    // Dışa aktarma için tüm mesajlar (eski→yeni).
+    allMessages: (chatId: number): MessageView[] =>
+      db.query<MessageView, [number]>(`${MESSAGE_SELECT} WHERE m.chat_id = ? ORDER BY m.ts, m.id`).all(chatId),
 
     // Verilen numaralarda mesaj metninde arama, en yeni 50.
     search: (numberIds: number[], q: string): { message: MessageView; chatId: number }[] => {

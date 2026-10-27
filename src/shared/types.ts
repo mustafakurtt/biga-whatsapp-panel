@@ -40,6 +40,35 @@ export interface ChatRow {
   unread: number;
   assigned_to: number | null;
   assigned_name: string | null;
+  status: ChatStatus;
+  tags: number[]; // etiket kimlikleri
+}
+
+export type ChatStatus = "open" | "closed";
+
+export const TAG_COLORS = ["gray", "red", "orange", "yellow", "green", "teal", "blue", "purple", "pink"] as const;
+export type TagColor = (typeof TAG_COLORS)[number];
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: TagColor;
+}
+
+// Ekip içi not (müşteri görmez).
+export interface Note {
+  id: number;
+  chat_id: number;
+  user_id: number | null;
+  user_name: string;
+  as_user_name: string | null;
+  body: string;
+  ts: number;
+}
+
+export interface Viewer {
+  id: number;
+  name: string;
 }
 
 export type MessageSource = "contact" | "phone" | "panel";
@@ -62,4 +91,8 @@ export type MessageView = MessageRow & { sent_by_name: string | null; as_user_na
 export type LiveEvent =
   | { type: "message"; numberId: number; chat: ChatRow; message: MessageView }
   | { type: "chat_updated"; numberId: number; chat: ChatRow }
+  | { type: "note"; numberId: number; chatId: number; note: Note }
+  | { type: "note_deleted"; numberId: number; chatId: number; noteId: number }
+  | { type: "viewers"; numberId: number; chatId: number; viewers: Viewer[] }
+  | { type: "tags_changed" }
   | { type: "number_status"; numberId: number; status: NumberStatus };

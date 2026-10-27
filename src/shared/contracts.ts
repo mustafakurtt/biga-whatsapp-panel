@@ -56,6 +56,8 @@ export interface MessageService {
 export interface LiveHub {
   subscribe(userId: number, send: (event: LiveEvent) => void): () => void;
   publish(numberId: number, event: LiveEvent): void;
+  // Numaradan bağımsız olay (ör. etiket listesi değişti): tüm bağlı kullanıcılara.
+  broadcast(event: LiveEvent): void;
 }
 
 export interface Notifier {
@@ -72,6 +74,15 @@ export type AuditAction =
   | "message.send"
   | "chat.start"
   | "chat.assign"
+  | "chat.status"
+  | "chat.tags"
+  | "chat.export"
+  | "note.create"
+  | "note.delete"
+  | "tag.create"
+  | "tag.update"
+  | "tag.delete"
+  | "audit.export"
   | "number.create"
   | "number.delete"
   | "number.pair"

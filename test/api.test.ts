@@ -224,7 +224,7 @@ describe("arama, atama, hazır yanıt, rapor", () => {
     expect(summary.totals).toEqual({ incoming: 2, outgoing: 1, panel: 1, phone: 0, chats: 2 });
     expect(summary.daily).toHaveLength(7);
     expect(summary.daily.at(-1)).toMatchObject({ incoming: 2, outgoing: 1 });
-    expect(summary.perUser).toEqual([{ userId: aliId, name: "ALI", sent: 1 }]);
+    expect(summary.perUser).toMatchObject([{ userId: aliId, name: "ALI", sent: 1, replies: 1 }]);
     expect((await patron("GET", "/api/reports/summary?days=0")).status).toBe(400);
   });
 });

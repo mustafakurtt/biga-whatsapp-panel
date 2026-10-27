@@ -9,6 +9,14 @@ type Send = (event: LiveEvent) => void;
 export const createLiveHub = (db: Database): LiveHub => {
   const listeners = new Map<number, Set<Send>>();
 
+  const deliver = (send: Send, event: LiveEvent) => {
+    try {
+      send(event);
+    } catch {
+      // kopmuş bağlantı; kendi aboneliğini kapatır
+    }
+  };
+
   return {
     subscribe(userId, send) {
       const set = listeners.get(userId) ?? new Set<Send>();
@@ -23,14 +31,11 @@ export const createLiveHub = (db: Database): LiveHub => {
       if (listeners.size === 0) return;
       // Yetki her olayda veritabanından okunur: rol ya da atama değişirse hemen etkili olur.
       for (const userId of viewersOfNumber(db, numberId)) {
-        for (const send of listeners.get(userId) ?? []) {
-          try {
-            send(event);
-          } catch {
-            // kopmuş bağlantı; kendi aboneliğini kapatır
-          }
-        }
+        for (const send of listeners.get(userId) ?? []) deliver(send, event);
       }
+    },
+    broadcast(event) {
+      for (const set of listeners.values()) for (const send of set) deliver(send, event);
     },
   };
 };

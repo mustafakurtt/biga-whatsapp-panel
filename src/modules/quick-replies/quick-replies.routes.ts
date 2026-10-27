@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { badRequest, idParam, notFound, readJson } from "../../shared/http";
+import { sortTr } from "../../shared/sort";
 import { audit } from "../audit/audit.log";
 import { requirePermission } from "../auth/auth.middleware";
 
@@ -16,7 +17,9 @@ export const createQuickRepliesRoutes = (deps: AppDeps) => {
   const manage = requirePermission("quick_replies.manage");
 
   return new Hono<AppEnv>()
-    .get("/", (c) => c.json({ items: db.query<Item, []>("SELECT id, title, body FROM quick_replies ORDER BY title").all() }))
+    .get("/", (c) =>
+      c.json({ items: sortTr(db.query<Item, []>("SELECT id, title, body FROM quick_replies").all(), (i) => i.title) }),
+    )
     .post("/", manage, async (c) => {
       const parsed = schema.safeParse(await readJson(c));
       if (!parsed.success) throw badRequest("Başlık ve metin gerekli");

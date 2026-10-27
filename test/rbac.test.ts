@@ -157,7 +157,7 @@ describe("kullanıcı ve rol yönetimi", () => {
     expect((await patron("DELETE", `/api/roles/${yonetici.json.role.id}`)).status).toBe(400);
     const roles = (await patron("GET", "/api/roles")).json.roles;
     expect(roles[0]).toMatchObject({ name: "Patron", system: true, userCount: 1 });
-    expect((await patron("GET", "/api/permissions")).json.permissions.length).toBe(11);
+    expect((await patron("GET", "/api/permissions")).json.permissions.length).toBe(13);
   });
 });
 
@@ -181,7 +181,7 @@ describe("veritabanı geçişi", () => {
       old.close();
 
       const db = openDatabase(path);
-      expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 2 });
+      expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 3 });
       expect(db.query("SELECT id, role_id, active FROM users ORDER BY id").all()).toEqual([
         { id: 1, role_id: 1, active: 1 },
         { id: 2, role_id: 2, active: 1 },

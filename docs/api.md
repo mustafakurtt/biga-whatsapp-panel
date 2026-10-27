@@ -24,6 +24,8 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | `audit.view` | Etkinlik kaydını görür |
 | `reports.view` | Raporları görür |
 | `quick_replies.manage` | Hazır yanıtları ekler/düzenler/siler |
+| `tags.manage` | Etiketleri ekler/düzenler/siler (sohbete etiket takmak için yazma erişimi yeter) |
+| `data.export` | Sohbet dökümünü ve etkinlik kaydını CSV olarak indirir |
 
 **Numara erişimi** (kullanıcı başına, numara başına): `none` (atanmamış: göremez) · `read` (okur) · `write` (okur ve yazar).
 - `numbers.view_all` olan kullanıcı tüm numaraları görür.
@@ -44,7 +46,12 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 - `User` (oturum): `{id, username, name, roleId, roleName, permissions: string[]}`. `permissions` her zaman etkin izinlerdir.
 - `Me`: `{user: User, actor: User | null}`. `actor` doluysa siz `actor`sunuz ve `user`ın ekranındasınız.
 - `Number`: `{id, label, phone, status, me_id, access: "read"|"write", unread}`. `unread` tüm sohbetlerdeki okunmamış toplamıdır.
-- `ChatRow`: `{id, number_id, remote_id, name, last_text, last_message_at, unread, assigned_to, assigned_name}`
+- `ChatRow`: `{id, number_id, remote_id, name, last_text, last_message_at, unread, assigned_to, assigned_name, status: "open"|"closed", tags: number[]}`
+  - `tags`: etiket kimlikleri; adı ve rengi `GET /api/tags`'ten gelir.
+  - Kapalı sohbete müşteri yazarsa sohbet kendiliğinden `open` olur.
+- `Tag`: `{id, name, color}`. `color` şunlardan biridir: `gray`, `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`.
+- `Note`: `{id, chat_id, user_id, user_name, as_user_name, body, ts}`. Müşteri görmez, sadece ekip içidir.
+- `Viewer`: `{id, name}`. Bir sohbete şu an bakan kullanıcıdır.
 - `Message`: `{id, chat_id, provider_id, direction:"in"|"out", source:"contact"|"phone"|"panel", sent_by, sent_by_name, as_user, as_user_name, body, ts}`
 - `ManagedUser`: `{id, username, name, roleId, roleName, active, lastLoginAt, numbers:[{numberId, access:"read"|"write"}]}`
 - `Role`: `{id, name, permissions: string[], system: boolean, userCount}`
@@ -74,19 +81,31 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | GET | /api/numbers/:id/qr | `numbers.manage` | — | PNG resim (yedek bağlanma yolu) |
 | POST | /api/numbers/:id/refresh | `numbers.manage` | — | `{number}` |
 | DELETE | /api/numbers/:id | `numbers.manage` | — | `{ok:true}` |
-| GET | /api/numbers/:id/chats | numarayı gören | `?filter=all\|unread\|mine\|unassigned&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `q`: ad, numara ya da son mesajda arar |
+| GET | /api/numbers/:id/chats | numarayı gören | `?filter=all\|unread\|mine\|unassigned&status=open\|closed&tag=<id>&q=` | `{chats:[ChatRow]}` son mesaja göre yeni→eski. `status` verilmezse hepsi gelir. `q`: ad, numara ya da son mesajda arar |
 | POST | /api/numbers/:id/chats | `chats.start` + yazma erişimi | `{phone,text}` | `{chat}` yeni sohbet başlatır ve ilk mesajı gönderir (numara WhatsApp kullanmıyorsa 400) |
 | GET | /api/chats/:id | sohbeti gören | — | `{chat}` |
 | GET | /api/chats/:id/messages | sohbeti gören | `?before=<ts>` ops. | `{messages:[Message]}` eski→yeni, en fazla 100 |
 | POST | /api/chats/:id/messages | `messages.send` + yazma erişimi | `{text}` | `{ok:true}` |
 | POST | /api/chats/:id/read | sohbeti gören | — | `{ok:true}` okunmamış sayısı sıfırlanır (ekranına geçmişken etkisizdir) |
 | PUT | /api/chats/:id/assign | yazma erişimi (kendine) / `chats.assign` (başkasına) | `{userId: number\|null}` | `{chat}` |
+| PUT | /api/chats/:id/status | yazma erişimi | `{status:"open"\|"closed"}` | `{chat}` |
+| PUT | /api/chats/:id/tags | yazma erişimi | `{tagIds:number[]}` | `{chat}` (etiket listesini tamamen değiştirir) |
+| GET | /api/chats/:id/notes | sohbeti gören | — | `{notes:[Note]}` eski→yeni |
+| POST | /api/chats/:id/notes | sohbeti gören (izleme modunda olmayan) | `{text}` | `{note}` |
+| DELETE | /api/chats/:id/notes/:noteId | notu yazan ya da `users.manage` | — | `{ok:true}` |
+| POST | /api/chats/:id/viewing | sohbeti gören | — | `{viewers:[Viewer]}`. Sohbet açıkken 20 sn'de bir çağrılır; 45 sn çağrılmazsa bakan listesinden düşülür. Ekranına geçilmişken kaydedilmez, sadece listeyi döner |
+| GET | /api/chats/:id/export | `data.export` + sohbeti gören | — | `text/csv` sohbet dökümü (indirme) |
+| GET | /api/tags | giriş yapmış | — | `{tags:[Tag]}` |
+| POST | /api/tags | `tags.manage` | `{name,color}` | `{tag}` |
+| PUT | /api/tags/:id | `tags.manage` | `{name?,color?}` | `{tag}` |
+| DELETE | /api/tags/:id | `tags.manage` | — | `{ok:true}` (sohbetlerden de kalkar) |
 | GET | /api/search | giriş yapmış | `?q=` (en az 2 karakter) | `{results:[{chat: ChatRow, message: Message, numberLabel}]}` görülebilir numaralarda mesaj araması, en yeni 50 |
 | GET | /api/quick-replies | giriş yapmış | — | `{items:[{id,title,body}]}` |
 | POST | /api/quick-replies | `quick_replies.manage` | `{title,body}` | `{item}` |
 | PUT | /api/quick-replies/:id | `quick_replies.manage` | `{title?,body?}` | `{item}` |
 | DELETE | /api/quick-replies/:id | `quick_replies.manage` | — | `{ok:true}` |
 | GET | /api/audit | `audit.view` | `?before=<id>&userId=&action=` | `{entries:[AuditEntry]}` yeni→eski, en fazla 100 |
+| GET | /api/audit/export | `audit.view` + `data.export` | `?userId=&action=` | `text/csv` (en fazla 10.000 kayıt) |
 | GET | /api/reports/summary | `reports.view` | `?days=7` (1–90) | `Summary` |
 | GET | /api/events | giriş yapmış | — | SSE akışı; her olay `data: <LiveEvent JSON>` |
 | GET | /api/push/key | giriş yapmış | — | `{publicKey}` (boşsa push kapalı) |
@@ -95,15 +114,20 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | POST | /api/dev/inbound | `numbers.manage`, sadece PROVIDER=mock | `{numberId,from,name,text}` | `{ok:true}` sahte gelen mesaj |
 
 `AuditEntry`: `{id, ts, actor_id, actor_name, as_user_id, as_user_name, action, target, detail}`.
-- `action` şunlardan biridir: `auth.login`, `auth.login_failed`, `auth.logout`, `impersonate.start`, `impersonate.stop`, `message.send`, `chat.start`, `chat.assign`, `number.create`, `number.delete`, `number.pair`, `user.create`, `user.update`, `user.delete`, `role.create`, `role.update`, `role.delete`, `quick_reply.create`, `quick_reply.update`, `quick_reply.delete`.
+- `action` şunlardan biridir: `auth.login`, `auth.login_failed`, `auth.logout`, `impersonate.start`, `impersonate.stop`, `message.send`, `chat.start`, `chat.assign`, `chat.status`, `chat.tags`, `chat.export`, `note.create`, `note.delete`, `tag.create`, `tag.update`, `tag.delete`, `audit.export`, `number.create`, `number.delete`, `number.pair`, `user.create`, `user.update`, `user.delete`, `role.create`, `role.update`, `role.delete`, `quick_reply.create`, `quick_reply.update`, `quick_reply.delete`.
 - `target` kısa bir açıklamadır (ör. `"Satış → Ayşe"`). `detail` metin ya da null.
 
-`Summary`: `{days, totals:{incoming, outgoing, panel, phone, chats}, daily:[{day:"YYYY-MM-DD", incoming, outgoing}], perNumber:[{numberId,label,incoming,outgoing}], perUser:[{userId,name,sent}]}`. Sadece görülebilir numaraları kapsar.
+`Summary`: `{days, totals:{incoming, outgoing, panel, phone, chats}, response:{averageMs, medianMs, samples}, daily:[{day:"YYYY-MM-DD", incoming, outgoing}], perNumber:[{numberId,label,incoming,outgoing}], perUser:[{userId,name,sent,replies,avgResponseMs}]}`. Sadece görülebilir numaraları kapsar.
+- **Cevap süresi:** müşterinin cevapsız ilk mesajından, o sohbetteki ilk giden mesaja (panel ya da telefon) kadar geçen süre.
+- `response` tüm cevapları kapsar. `perUser[].replies` ve `avgResponseMs` sadece o kullanıcının panelden verdiği ilk cevaplardır; cevabı yoksa `avgResponseMs` null olur.
 
 `LiveEvent` (src/shared/types.ts):
 
 - `{type:"message", numberId, chat, message}`: `message.source` = `contact` (müşteri), `phone` (telefondan), `panel` (panelden; `sent_by_name` dolu, ekranına geçilmişse `as_user_name` de dolu).
-- `{type:"chat_updated", numberId, chat}`: atama ya da okundu değişikliği.
+- `{type:"chat_updated", numberId, chat}`: atama, okundu, durum ya da etiket değişikliği.
+- `{type:"note", numberId, chatId, note}` yeni not; `{type:"note_deleted", numberId, chatId, noteId}`.
+- `{type:"viewers", numberId, chatId, viewers:[Viewer]}`: sohbete bakanlar değişti.
+- `{type:"tags_changed"}`: etiket listesi değişti; `GET /api/tags` yeniden okunur.
 - `{type:"number_status", numberId, status}`: `WORKING`, `SCAN_QR_CODE`, `FAILED`, `STOPPED`, `STARTING`, `RESTRICTED`.
   - `RESTRICTED`: WhatsApp hesabı kısıtladı (hata 463). Numara bağlı ve mesaj almaya devam eder, ama panelden gönderim 24 saat durdurulur; gönderim denemesi 502 döner.
   - `STOPPED` şu durumlarda da gelir: oturum başka bir yerde açıldı (440) ya da 10 yeniden bağlanma denemesi bitti.

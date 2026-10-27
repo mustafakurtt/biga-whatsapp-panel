@@ -11,6 +11,7 @@ import { createNumbersRoutes } from "./modules/numbers/numbers.routes";
 import { createPushRoutes } from "./modules/push/push.routes";
 import { createQuickRepliesRoutes } from "./modules/quick-replies/quick-replies.routes";
 import { createReportsRoutes } from "./modules/reports/reports.routes";
+import { createTagsRoutes } from "./modules/tags/tags.routes";
 import { createUsersRoutes } from "./modules/users/users.routes";
 import { type AppDeps, type AppEnv, ProviderError } from "./shared/contracts";
 import { HttpFailure } from "./shared/http";
@@ -35,6 +36,7 @@ export const createApp = (deps: AppDeps) => {
   api.route("/chats", chatRoutes);
   api.route("/search", searchRoutes);
   api.route("/quick-replies", createQuickRepliesRoutes(deps));
+  api.route("/tags", createTagsRoutes(deps));
   api.route("/audit", createAuditRoutes(deps));
   api.route("/reports", createReportsRoutes(deps));
   api.route("/events", createEventsRoutes(deps));

@@ -1,5 +1,6 @@
 // Numara tablosu.
 import type { Database } from "../../db/client";
+import { sortTr } from "../../shared/sort";
 import type { NumberRow, NumberStatus } from "../../shared/types";
 
 export const createNumbersRepository = (db: Database) => ({
@@ -12,7 +13,7 @@ export const createNumbersRepository = (db: Database) => ({
   listByIds: (ids: number[]): NumberRow[] => {
     if (ids.length === 0) return [];
     const marks = ids.map(() => "?").join(",");
-    return db.query<NumberRow, number[]>(`SELECT * FROM numbers WHERE id IN (${marks}) ORDER BY label`).all(...ids);
+    return sortTr(db.query<NumberRow, number[]>(`SELECT * FROM numbers WHERE id IN (${marks})`).all(...ids), (n) => n.label);
   },
   // Oturum adı numaranın kimliğinden türetilir (n1, n2…), böylece tekil ve sabittir.
   create: (label: string, phone: string): NumberRow =>

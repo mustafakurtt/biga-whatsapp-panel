@@ -7,11 +7,13 @@ export const PERMISSIONS = [
   { key: "chats.start", label: "Yeni sohbet başlatır", group: "Mesajlar" },
   { key: "chats.assign", label: "Sohbeti başkasına atar", group: "Mesajlar" },
   { key: "quick_replies.manage", label: "Hazır yanıtları yönetir", group: "Mesajlar" },
+  { key: "tags.manage", label: "Etiketleri yönetir", group: "Mesajlar" },
   { key: "users.manage", label: "Kullanıcıları ve rolleri yönetir", group: "Yönetim" },
   { key: "impersonate.view", label: "Başka kullanıcının ekranına geçer (izler)", group: "Ekranına geç" },
   { key: "impersonate.send", label: "Başkasının ekranındayken mesaj gönderir", group: "Ekranına geç" },
   { key: "audit.view", label: "Etkinlik kaydını görür", group: "Denetim" },
   { key: "reports.view", label: "Raporları görür", group: "Denetim" },
+  { key: "data.export", label: "Sohbet dökümünü ve etkinlik kaydını indirir (CSV)", group: "Denetim" },
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number]["key"];

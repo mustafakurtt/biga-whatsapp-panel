@@ -117,7 +117,35 @@ CREATE TABLE quick_replies (
 );
 `;
 
-const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2];
+// Sürüm 3: sohbet durumu (açık/kapalı), etiketler, ekip içi notlar.
+const V3 = () => `
+ALTER TABLE chats ADD COLUMN status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed'));
+
+CREATE TABLE tags (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  color TEXT NOT NULL DEFAULT 'gray'
+);
+CREATE TABLE chat_tags (
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  PRIMARY KEY (chat_id, tag_id)
+);
+CREATE INDEX chat_tags_tag ON chat_tags (tag_id);
+
+CREATE TABLE chat_notes (
+  id INTEGER PRIMARY KEY,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  user_name TEXT NOT NULL,
+  as_user_name TEXT,
+  body TEXT NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX chat_notes_chat ON chat_notes (chat_id, ts);
+`;
+
+const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3];
 
 const migrate = (db: Database) => {
   const current = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;

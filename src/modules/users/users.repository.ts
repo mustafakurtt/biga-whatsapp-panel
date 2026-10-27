@@ -1,6 +1,7 @@
 // Kullanıcı tablosu, roller ve numara erişimleri.
 import type { Database } from "../../db/client";
 import { type Permission, parsePermissions } from "../../shared/permissions";
+import { sortTr } from "../../shared/sort";
 import type { NumberAccess } from "../../shared/types";
 
 export interface NumberGrant {
@@ -64,7 +65,7 @@ export const createUsersRepository = (db: Database) => {
 
   return {
     get,
-    list: (): ManagedUser[] => db.query<UserRow, []>(`${USER_SELECT} ORDER BY u.name`).all().map(view),
+    list: (): ManagedUser[] => sortTr(db.query<UserRow, []>(USER_SELECT).all(), (u) => u.name).map(view),
     usernameTaken: (username: string): boolean =>
       db.query("SELECT 1 FROM users WHERE username = ?").get(username) !== null,
     // Aktif ve Patron rolündeki başka kullanıcı sayısı (son patronu kaybetmeyelim).
