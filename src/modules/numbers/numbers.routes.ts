@@ -1,6 +1,7 @@
 // Numaralar: listeleme (herkes kendi gördüklerini), yönetim ve bağlama (`numbers.manage`), sohbet listesi ve yeni sohbet.
 import { Hono } from "hono";
 import { z } from "zod";
+import { mockAllowed } from "../../config/env";
 import { accessTo, has, numberAccessMap } from "../../shared/access";
 import type { AppDeps, AppEnv } from "../../shared/contracts";
 import { badRequest, forbidden, idParam, notFound, readJson } from "../../shared/http";
@@ -10,7 +11,11 @@ import { audit, whoFrom } from "../audit/audit.log";
 import { type ChatFilter, createChatsRepository } from "../chats/chats.repository";
 import { createNumbersRepository } from "./numbers.repository";
 
-const createSchema = z.object({ label: z.string().trim().min(1).max(60), phone: z.string().min(1) });
+const createSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  phone: z.string().min(1),
+  provider: z.enum(["baileys", "mock"]).optional(),
+});
 const newChatSchema = z.object({ phone: z.string().min(1), text: z.string().trim().min(1).max(4096) });
 const FILTERS = new Set<ChatFilter>(["all", "unread", "mine", "unassigned"]);
 
@@ -28,6 +33,7 @@ export const createNumbersRoutes = (deps: AppDeps) => {
     id: n.id,
     label: n.label,
     phone: n.phone,
+    provider: n.provider,
     status: n.status,
     me_id: n.me_id,
     access,
@@ -64,10 +70,12 @@ export const createNumbersRoutes = (deps: AppDeps) => {
       if (!parsed.success) throw badRequest("Ad ve telefon numarası gerekli");
       const phone = phoneOrFail(parsed.data.phone);
       if (numbers.byPhone(phone)) throw badRequest("Bu numara zaten ekli");
-      const number = numbers.create(parsed.data.label, phone);
+      const provider = parsed.data.provider ?? deps.env.PROVIDER;
+      if (provider === "mock" && !mockAllowed(deps.env)) throw badRequest("Test numaraları bu sunucuda kapalı");
+      const number = numbers.create(parsed.data.label, phone, provider);
       // Oturum açılamasa da numara kalır; "Eşleştirme kodu al" tekrar dener.
       await deps.provider.createSession(number.session).catch((err) => deps.logger.warn({ err }, "oturum açılamadı"));
-      audit(c, deps, "number.create", `${number.label} (+${phone})`);
+      audit(c, deps, "number.create", `${number.label} (+${phone})`, provider === "mock" ? "test numarası" : "WhatsApp");
       return c.json({ number: managedView(c.get("user"), number.id) });
     })
     .post("/:id/pair", async (c) => {

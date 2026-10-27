@@ -145,7 +145,12 @@ CREATE TABLE chat_notes (
 CREATE INDEX chat_notes_chat ON chat_notes (chat_id, ts);
 `;
 
-const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3];
+// Sürüm 4: numara türü (gerçek WhatsApp ya da test) — ikisi aynı panelde.
+const V4 = () => `
+ALTER TABLE numbers ADD COLUMN provider TEXT NOT NULL DEFAULT 'baileys' CHECK (provider IN ('baileys','mock'));
+`;
+
+const MIGRATIONS: ((now: number) => string)[] = [() => V1, V2, V3, V4];
 
 const migrate = (db: Database) => {
   const current = db.query<{ user_version: number }, []>("PRAGMA user_version").get()!.user_version;

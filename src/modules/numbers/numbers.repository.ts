@@ -1,7 +1,7 @@
 // Numara tablosu.
 import type { Database } from "../../db/client";
 import { sortTr } from "../../shared/sort";
-import type { NumberRow, NumberStatus } from "../../shared/types";
+import type { NumberRow, NumberStatus, ProviderKind } from "../../shared/types";
 
 export const createNumbersRepository = (db: Database) => ({
   all: (): NumberRow[] => db.query<NumberRow, []>("SELECT * FROM numbers ORDER BY label").all(),
@@ -16,14 +16,14 @@ export const createNumbersRepository = (db: Database) => ({
     return sortTr(db.query<NumberRow, number[]>(`SELECT * FROM numbers WHERE id IN (${marks})`).all(...ids), (n) => n.label);
   },
   // Oturum adı numaranın kimliğinden türetilir (n1, n2…), böylece tekil ve sabittir.
-  create: (label: string, phone: string): NumberRow =>
+  create: (label: string, phone: string, provider: ProviderKind): NumberRow =>
     db.transaction(() => {
       const temp = `tmp_${crypto.randomUUID()}`;
       const row = db
-        .query<{ id: number }, [string, string, string, number]>(
-          "INSERT INTO numbers (label, phone, session, created_at) VALUES (?, ?, ?, ?) RETURNING id",
+        .query<{ id: number }, [string, string, ProviderKind, string, number]>(
+          "INSERT INTO numbers (label, phone, provider, session, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
         )
-        .get(label, phone, temp, Date.now())!;
+        .get(label, phone, provider, temp, Date.now())!;
       db.query("UPDATE numbers SET session = ? WHERE id = ?").run(`n${row.id}`, row.id);
       return db.query<NumberRow, [number]>("SELECT * FROM numbers WHERE id = ?").get(row.id)!;
     })(),

@@ -14,6 +14,7 @@ import { createReportsRoutes } from "./modules/reports/reports.routes";
 import { createTagsRoutes } from "./modules/tags/tags.routes";
 import { createUsersRoutes } from "./modules/users/users.routes";
 import { type AppDeps, type AppEnv, ProviderError } from "./shared/contracts";
+import { mockAllowed } from "./config/env";
 import { HttpFailure } from "./shared/http";
 
 export const createApp = (deps: AppDeps) => {
@@ -41,7 +42,11 @@ export const createApp = (deps: AppDeps) => {
   api.route("/reports", createReportsRoutes(deps));
   api.route("/events", createEventsRoutes(deps));
   api.route("/push", createPushRoutes(deps));
-  if (deps.env.PROVIDER === "mock") api.route("/dev", createDevRoutes(deps));
+  if (mockAllowed(deps.env)) api.route("/dev", createDevRoutes(deps));
+  // Ön yüzün bilmesi gereken sunucu ayarları.
+  api.get("/config", (c) =>
+    c.json({ mockAllowed: mockAllowed(deps.env), defaultProvider: deps.env.PROVIDER, pushEnabled: deps.notifier.publicKey !== "" }),
+  );
   api.route("/", createUsersRoutes(deps)); // /permissions, /users, /roles
   app.route("/api", api);
 

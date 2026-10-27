@@ -45,7 +45,9 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 
 - `User` (oturum): `{id, username, name, roleId, roleName, permissions: string[]}`. `permissions` her zaman etkin izinlerdir.
 - `Me`: `{user: User, actor: User | null}`. `actor` doluysa siz `actor`sunuz ve `user`ın ekranındasınız.
-- `Number`: `{id, label, phone, status, me_id, access: "read"|"write", unread}`. `unread` tüm sohbetlerdeki okunmamış toplamıdır.
+- `Number`: `{id, label, phone, provider: "baileys"|"mock", status, me_id, access: "read"|"write", unread}`.
+  - `unread` tüm sohbetlerdeki okunmamış toplamıdır.
+  - `provider`: `baileys` gerçek WhatsApp numarasıdır; `mock` test numarasıdır, mesajlar WhatsApp'a gitmez. İkisi aynı panelde yan yana durabilir.
 - `ChatRow`: `{id, number_id, remote_id, name, last_text, last_message_at, unread, assigned_to, assigned_name, status: "open"|"closed", tags: number[]}`
   - `tags`: etiket kimlikleri; adı ve rengi `GET /api/tags`'ten gelir.
   - Kapalı sohbete müşteri yazarsa sohbet kendiliğinden `open` olur.
@@ -76,7 +78,7 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | PUT | /api/users/:id | `users.manage` | `{name?,password?,roleId?,active?,numbers?}` | `{user: ManagedUser}` (kendi hesabınızı devre dışı bırakamaz, Patron rolünüzü kaldıramazsınız) |
 | DELETE | /api/users/:id | `users.manage` | — | `{ok:true}` (kendinizi silemezsiniz) |
 | GET | /api/numbers | giriş yapmış | — | `{numbers:[Number]}` (görebildikleri) |
-| POST | /api/numbers | `numbers.manage` | `{label,phone}` | `{number}` (WhatsApp oturumu da açılır) |
+| POST | /api/numbers | `numbers.manage` | `{label,phone,provider?}` (`provider` verilmezse sunucu varsayılanı; test numaraları kapalıysa `mock` 400) | `{number}` (WhatsApp oturumu da açılır) |
 | POST | /api/numbers/:id/pair | `numbers.manage` | — | `{code}` (8 haneli eşleştirme kodu; bağlıysa 400) |
 | GET | /api/numbers/:id/qr | `numbers.manage` | — | PNG resim (yedek bağlanma yolu) |
 | POST | /api/numbers/:id/refresh | `numbers.manage` | — | `{number}` |
@@ -111,7 +113,8 @@ Kurulumda üç rol gelir: `Patron` (hepsi), `Temsilci` (`messages.send`, `chats.
 | GET | /api/push/key | giriş yapmış | — | `{publicKey}` (boşsa push kapalı) |
 | POST | /api/push/subscribe | giriş yapmış | PushSubscription JSON | `{ok:true}` |
 | POST | /api/push/unsubscribe | giriş yapmış | `{endpoint}` | `{ok:true}` |
-| POST | /api/dev/inbound | `numbers.manage`, sadece PROVIDER=mock | `{numberId,from,name,text}` | `{ok:true}` sahte gelen mesaj |
+| GET | /api/config | giriş yapmış | — | `{mockAllowed, defaultProvider, pushEnabled}` |
+| POST | /api/dev/inbound | `numbers.manage`, test numaraları açıkken | `{numberId,from,name,text}` | `{ok:true}` test numarasına sahte gelen mesaj (gerçek numaraya 400) |
 
 `AuditEntry`: `{id, ts, actor_id, actor_name, as_user_id, as_user_name, action, target, detail}`.
 - `action` şunlardan biridir: `auth.login`, `auth.login_failed`, `auth.logout`, `impersonate.start`, `impersonate.stop`, `message.send`, `chat.start`, `chat.assign`, `chat.status`, `chat.tags`, `chat.export`, `note.create`, `note.delete`, `tag.create`, `tag.update`, `tag.delete`, `audit.export`, `number.create`, `number.delete`, `number.pair`, `user.create`, `user.update`, `user.delete`, `role.create`, `role.update`, `role.delete`, `quick_reply.create`, `quick_reply.update`, `quick_reply.delete`.

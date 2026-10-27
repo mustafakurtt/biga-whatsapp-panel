@@ -10,8 +10,10 @@ const schema = z.object({
   DATABASE_PATH: z.string().default("./data/app.db"),
   JWT_SECRET: z.string().min(32, "en az 32 karakter olmalı"),
   COOKIE_SECURE: envBoolean(false),
-  // baileys: gerçek WhatsApp (numara sunucuya bağlı cihaz olarak eklenir). mock: WhatsApp'sız deneme.
+  // Yeni numaranın varsayılan türü. baileys: gerçek WhatsApp (sunucuya bağlı cihaz). mock: WhatsApp'sız test numarası.
   PROVIDER: z.enum(["baileys", "mock"]).default("baileys"),
+  // Test (mock) numaralarına izin: boş bırakılırsa production dışında açık. PROVIDER=mock ise her zaman açık.
+  ALLOW_MOCK: z.enum(["true", "false", ""]).default(""),
   // Her numaranın WhatsApp oturum dosyaları burada (numara başına bir klasör). Gizli tutulmalı.
   BAILEYS_AUTH_DIR: z.string().default("./data/baileys"),
   VAPID_PUBLIC_KEY: z.string().default(""),
@@ -25,3 +27,6 @@ export const parseEnv = (source: Record<string, string | undefined>): Env =>
   createEnv(schema, { source, intro: "Ortam değişkenleri geçersiz:" });
 
 export const readEnv = (): Env => parseEnv(process.env);
+
+export const mockAllowed = (env: Env): boolean =>
+  env.PROVIDER === "mock" || (env.ALLOW_MOCK === "" ? env.NODE_ENV !== "production" : env.ALLOW_MOCK === "true");

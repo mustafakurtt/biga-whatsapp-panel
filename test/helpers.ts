@@ -10,6 +10,7 @@ import { createLiveHub } from "../src/modules/events/events.hub";
 import { createMessageService } from "../src/modules/messages/messages.service";
 import { type NumberGrant, createUsersRepository } from "../src/modules/users/users.repository";
 import { createMockProvider } from "../src/providers/mock.provider";
+import { createRoutingProvider } from "../src/providers/routing.provider";
 import type { Notifier } from "../src/shared/contracts";
 
 export const ROLE = { patron: 1, temsilci: 2, salt_okunur: 3 } as const;
@@ -28,7 +29,14 @@ export const setup = () => {
     },
   };
   const messages = createMessageService({ db, hub, notifier, logger });
-  const provider = createMockProvider({ onEvent: (e) => void messages.handleInbound(e), connectDelayMs: 0 });
+  // Testlerde "gerçek" taraf da mock: yönlendirmenin doğru çalıştığını iki ayrı örnekle görürüz.
+  const onEvent = (e: Parameters<typeof messages.handleInbound>[0]) => void messages.handleInbound(e);
+  const realSent: string[] = [];
+  const real = createMockProvider({ onEvent, connectDelayMs: 0 });
+  const provider = createRoutingProvider(db, {
+    baileys: { ...real, sendText: async (s, chatId, text) => (realSent.push(text), real.sendText(s, chatId, text)) },
+    mock: createMockProvider({ onEvent, connectDelayMs: 0 }),
+  });
   const app = createApp({ env, db, logger, provider, hub, notifier, messages, audit: createAuditLog(db) });
   const users = createUsersRepository(db);
 
@@ -70,7 +78,7 @@ export const setup = () => {
   const inbound = (api: Awaited<ReturnType<typeof login>>, numberId: number, from: string, name: string, text: string) =>
     api("POST", "/api/dev/inbound", { numberId, from, name, text });
 
-  return { app, db, hub, pushes, users, addUser, login, addNumber, inbound };
+  return { app, db, hub, pushes, users, addUser, login, addNumber, inbound, realSent };
 };
 
 export type TestContext = ReturnType<typeof setup>;

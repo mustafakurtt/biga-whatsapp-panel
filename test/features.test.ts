@@ -169,3 +169,25 @@ const cookieOf = async (username: string) => {
   });
   return res.headers.get("set-cookie")!.split(";")[0]!;
 };
+
+describe("gerçek ve test numarası yan yana", () => {
+  test("her numara kendi sağlayıcısına gider; sahte mesaj sadece test numarasına", async () => {
+    await t.addUser("patron", ROLE.patron);
+    const patron = await t.login("patron");
+    const real = (await patron("POST", "/api/numbers", { label: "Benim", phone: "905551110000", provider: "baileys" })).json.number;
+    const test = (await patron("POST", "/api/numbers", { label: "Test", phone: "905551119999", provider: "mock" })).json.number;
+    expect([real.provider, test.provider]).toEqual(["baileys", "mock"]);
+    expect((await patron("GET", "/api/config")).json).toEqual({ mockAllowed: true, defaultProvider: "mock", pushEnabled: false });
+
+    await patron("POST", `/api/numbers/${real.id}/pair`);
+    await patron("POST", `/api/numbers/${test.id}/pair`);
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect((await t.inbound(patron, real.id, "905320000001", "X", "olmaz")).status).toBe(400);
+    expect((await t.inbound(patron, test.id, "905320000001", "Y", "olur")).status).toBe(200);
+
+    await patron("POST", `/api/numbers/${real.id}/chats`, { phone: "905320000002", text: "gerçek numaradan" });
+    await patron("POST", `/api/numbers/${test.id}/chats`, { phone: "905320000003", text: "test numarasından" });
+    expect(t.realSent).toEqual(["gerçek numaradan"]);
+  });
+});

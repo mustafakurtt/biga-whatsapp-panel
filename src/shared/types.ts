@@ -20,10 +20,14 @@ export type NumberAccess = "read" | "write";
 // RESTRICTED: WhatsApp kısıtladı (463); bağlı ama panelden gönderim geçici olarak durduruldu.
 export type NumberStatus = "WORKING" | "SCAN_QR_CODE" | "STARTING" | "FAILED" | "STOPPED" | "RESTRICTED";
 
+// baileys: gerçek WhatsApp numarası. mock: test numarası (WhatsApp'a gitmez).
+export type ProviderKind = "baileys" | "mock";
+
 export interface NumberRow {
   id: number;
   label: string;
   phone: string;
+  provider: ProviderKind;
   session: string;
   status: NumberStatus;
   me_id: string | null;

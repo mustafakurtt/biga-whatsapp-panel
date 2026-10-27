@@ -1,4 +1,4 @@
-// Sadece PROVIDER=mock iken: WhatsApp'sız denemek için sahte gelen mesaj.
+// Test numaraları açıkken: test numarasına sahte gelen mesaj (WhatsApp'sız deneme).
 import { Hono } from "hono";
 import { z } from "zod";
 import { has } from "../../shared/access";
@@ -22,6 +22,7 @@ export const createDevRoutes = (deps: AppDeps) => {
     if (!parsed.success) throw badRequest("numberId, from ve text gerekli");
     const number = numbers.get(parsed.data.numberId);
     if (!number) throw notFound("Numara bulunamadı");
+    if (number.provider !== "mock") throw badRequest("Sahte mesaj sadece test numaralarına gönderilebilir");
     const digits = normalizePhone(parsed.data.from);
     if (!isValidPhone(digits)) throw badRequest("Telefon numarası geçersiz");
     await deps.messages.handleInbound({

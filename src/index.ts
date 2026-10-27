@@ -2,7 +2,7 @@
 import { createShutdownManager } from "@mustafakurtt/hono-core/http";
 import { createLogger } from "@mustafakurtt/hono-core/logger";
 import { createApp } from "./app";
-import { readEnv } from "./config/env";
+import { mockAllowed, readEnv } from "./config/env";
 import { openDatabase } from "./db/client";
 import { createAuditLog } from "./modules/audit/audit.log";
 import { createLiveHub } from "./modules/events/events.hub";
@@ -11,6 +11,7 @@ import { createNumbersRepository } from "./modules/numbers/numbers.repository";
 import { createNotifier } from "./modules/push/push.notifier";
 import { createBaileysProvider } from "./providers/baileys.provider";
 import { createMockProvider } from "./providers/mock.provider";
+import { createRoutingProvider } from "./providers/routing.provider";
 import type { InboundHandler } from "./shared/contracts";
 
 const env = readEnv();
@@ -24,7 +25,11 @@ const messages = createMessageService({ db, hub, notifier, logger });
 const onEvent: InboundHandler = (event) => {
   messages.handleInbound(event).catch((err) => logger.error({ err }, "WhatsApp olayı işlenemedi"));
 };
-const provider = env.PROVIDER === "mock" ? createMockProvider({ onEvent }) : createBaileysProvider({ env, logger, onEvent });
+// Gerçek ve test numaraları yan yana: her numara kendi türündeki sağlayıcıya gider.
+const provider = createRoutingProvider(db, {
+  baileys: createBaileysProvider({ env, logger, onEvent }),
+  mock: mockAllowed(env) ? createMockProvider({ onEvent }) : undefined,
+});
 
 const app = createApp({ env, db, logger, provider, hub, notifier, messages, audit: createAuditLog(db) });
 // SSE bağlantıları uzun ömürlü; Bun'ın boşta zaman aşımı kapatılır (canlı akış kendi ping'ini gönderir).
