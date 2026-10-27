@@ -31,17 +31,22 @@ Tüm özelliklerin ayrıntısı: [docs/ozellikler.md](docs/ozellikler.md).
 
 ## Gereksinimler
 
-- **Bun 1.4.x** (proje `bun@1.4.3` ile sabitlenmiştir, bkz. `package.json` → `packageManager`)
+- **Bun 1.4.x** (proje `bun@1.4.3` ile sabitlenmiştir, bkz. `package.json` → `packageManager`). Kurulum: Windows'ta `powershell -c "irm bun.sh/install.ps1 | iex"`, macOS/Linux'ta `curl -fsSL https://bun.sh/install | bash`
+- **Git**
 - Gerçek numara bağlamak için: sunucunun internete çıkışı ve numaranın kayıtlı olduğu, WhatsApp'ı açık bir telefon
 - Push bildirimleri için: `localhost` ya da HTTPS üzerinden erişim
 
-Production kurulumu (Docker + Caddy ile otomatik HTTPS, yedekleme ve geri yükleme) için: **[docs/deploy.md](docs/deploy.md)**. Sunucu kurmadan önce telefondan denemek için hızlı tünel notları: [deploy/quick-tunnel.md](deploy/quick-tunnel.md).
+Production kurulumu (Docker + Caddy ile otomatik HTTPS, yedekleme ve geri yükleme) için: **[docs/deploy.md](docs/deploy.md)**. Sunucu kurmadan önce telefondan denemek için (geçici HTTPS tüneli ya da aynı Wi-Fi ağı): [deploy/quick-tunnel.md](deploy/quick-tunnel.md).
 
 ---
 
 ## Hızlı başlangıç (yerel geliştirme)
 
 ```sh
+# 0) Depoyu indirin
+git clone https://github.com/mustafakurtt/biga-whatsapp-panel.git
+cd biga-whatsapp-panel
+
 # 1) Bağımlılıklar
 bun install
 

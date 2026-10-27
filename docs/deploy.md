@@ -51,7 +51,7 @@ Proje dosyalarını sunucuya koyun. Bu rehber `/opt/biga-panel` klasörünü kul
 ```sh
 sudo mkdir -p /opt/biga-panel && sudo chown $USER /opt/biga-panel
 # Git deposu varsa:
-git clone <depo-adresi> /opt/biga-panel
+git clone https://github.com/mustafakurtt/biga-whatsapp-panel.git /opt/biga-panel
 # Yoksa kendi bilgisayarınızdan kopyalayın (node_modules, data, .env HARİÇ):
 #   scp -r Dockerfile .dockerignore package.json bun.lock tsconfig.json src scripts web deploy kullanici@sunucu:/opt/biga-panel/
 ```

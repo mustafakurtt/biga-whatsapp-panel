@@ -26,7 +26,7 @@ PWA kurulumu, service worker ve push bildirimleri **HTTPS** ister (`localhost` h
    Çıktıda `https://<rastgele-kelimeler>.trycloudflare.com` gibi bir adres çıkar. Telefonda bu adresi açın, giriş yapın, "Ana ekrana ekle" ile kurun ve bildirimleri açın.
    - iPhone'da push yalnızca **ana ekrana eklenmiş** PWA'da çalışır (iOS 16.4+).
 
-## Sınırlamalar
+## Tünelin sınırlamaları
 
 - **Canlı akış (SSE) çalışmaz.** Cloudflare Quick Tunnel, Server-Sent Events'i desteklemez. `/api/events` üzerinden gelen anlık güncellemeler tünelde gelmez; yeni mesajı görmek için sayfayı yenilemeniz gerekebilir. Push bildirimleri bundan etkilenmez. Gerçek sunucuda (Caddy) SSE çalışır.
 - Adres her `cloudflared` çalıştırmasında **değişir**. Yeni adreste PWA'yı yeniden kurmanız ve bildirimleri yeniden açmanız gerekir. Eski adresin aboneliği işe yaramaz.
@@ -35,3 +35,21 @@ PWA kurulumu, service worker ve push bildirimleri **HTTPS** ister (`localhost` h
 - Sabit adres ve SSE desteği isterseniz Cloudflare'de kayıtlı bir alan adıyla **adlandırılmış tünel** (named tunnel) kurulabilir, ama bu, kalıcı kurulum için `docs/deploy.md`'deki yoldan daha karmaşıktır.
 
 Kaynak: <https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/>
+
+---
+
+# Tünelsiz: aynı Wi-Fi ağından deneme
+
+Telefon ve bilgisayar aynı ağdaysa panel tünel olmadan da açılır. Canlı akış bu yolda çalışır. PWA kurulumu ve bildirimler ise yalnızca Android Chrome'da, aşağıdaki bayrakla çalışır. Tarayıcılar bu özellikleri HTTPS ya da `localhost` dışında açmaz.
+
+1. `.env` içinde `COOKIE_SECURE=false` olmalı. Düz HTTP'de güvenli çerez kaydedilmez, giriş yapılamaz.
+2. Bilgisayarın yerel adresini bulun: Windows'ta `ipconfig` (Wi-Fi → IPv4, ör. `192.168.1.107`), macOS/Linux'ta `ip addr` ya da `ifconfig`.
+3. Güvenlik duvarında port 3000'i yalnızca yerel ağa açın. Windows'ta **yönetici** PowerShell ile:
+   ```powershell
+   New-NetFirewallRule -DisplayName "Biga Panel 3000 (yerel ağ)" -Direction Inbound -Protocol TCP -LocalPort 3000 -RemoteAddress LocalSubnet -Action Allow -Profile Any
+   # Deneme bitince:
+   Remove-NetFirewallRule -DisplayName "Biga Panel 3000 (yerel ağ)"
+   ```
+4. Arayüzü derleyip sunucuyu başlatın (`bun run web:build`, `bun run start`). Telefonda `http://<yerel-adres>:3000` adresini açın.
+5. **Android'de PWA ve bildirim için:** telefonda `chrome://flags` → **Insecure origins treated as secure** → kutuya `http://<yerel-adres>:3000` yazın → **Enabled** → Chrome'u yeniden başlatın. Ardından menüden "Uygulamayı yükle" deyin ve bildirim izni verin.
+6. **iPhone'da** böyle bir ayar yoktur. Ağ üzerinden panel kullanılır ama kurulum ve bildirim için tünel ya da HTTPS kurulum gerekir.
